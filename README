@@ -1,0 +1,13 @@
+Create and extract RPM archives.
+
+Only supports gzip compressed archives.
+Can only generate MD5 checksums.
+
+bar [-hrcxvV] [--version] archive-file [path ..]
+ h -- help
+ r -- recursive
+ c -- create
+ x -- extract
+ l -- list
+ v -- verbose
+ V -- verify
