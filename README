@@ -11,3 +11,11 @@ bar [-hrcxvV] [--version] archive-file [path ..]
  l -- list
  v -- verbose
  V -- verify
+
+Dependencies:
+- zlib
+- C compiler
+- Fairly recent Linux kernel, with the userspace crypto API.
+Thats all!
+
+Link statically and enjoy.
