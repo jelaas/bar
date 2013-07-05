@@ -1614,7 +1614,7 @@ int bar_extract(const char *archive, struct jlhead *files, int *err)
 	return 0;
 }
 
-struct file *file_new(const char *fn)
+struct file *file_new(const char *fn, int create)
 {
 	struct file *f;
 	int fd, i;
@@ -1638,6 +1638,10 @@ struct file *file_new(const char *fn)
 		}
 	} else {
 		f->normalized_name = strdup(fn);
+	}
+	if(!create) {
+		/* we are done. no need to fetch additional file info when not creating an archive */
+		return f;
 	}
 	if(lstat(f->name, &f->stat))
 		return 0;
@@ -1763,7 +1767,7 @@ int main(int argc, char **argv)
 
 	for(i=2;i<argc;i++) {
 		struct file *f;
-		f = file_new(argv[i]);
+		f = file_new(argv[i], conf.create);
 		if(!f) {
 			fprintf(stderr, "Failed to add file %s. Aborting.\n", argv[i]);
 			exit(1);
