@@ -425,9 +425,24 @@ int cpio_read(gzFile file, struct cpio_host *cpio)
 	cpio->c_namesize = strtoul(buf, 0, 16);
 	cpio->c_namesize += (((sizeof(header)+cpio->c_namesize+3)&~0x3) -
 			    (sizeof(header)+cpio->c_namesize));
-	cpio->name = malloc(cpio->c_namesize+1);
-	n = gzread(file, cpio->name, cpio->c_namesize);
-	if(n>0) cpio->name[n] = 0;
+	cpio->name = malloc(cpio->c_namesize+1+strlen("./"));
+	n = gzread(file, cpio->name+2, cpio->c_namesize);
+	if(n>0) cpio->name[n+2] = 0;
+	else { 
+		fprintf(stderr, "Error reading name from cpio.\n");
+		return -1;
+	}
+	if(cpio->name[2] == '/') {
+		cpio->name[1] = '.';
+		cpio->name++;
+	} else {
+		if(strncmp(cpio->name+2, "./", 2)) {
+			cpio->name[0] = '.';
+			cpio->name[1] = '/';
+		} else {
+			cpio->name += 2;
+		}
+	}
 	cpio->uncompressed_size += n;
 	return 0;
 }
