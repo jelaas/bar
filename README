@@ -19,3 +19,11 @@ Dependencies:
 Thats all!
 
 Link statically and enjoy.
+
+STATUS
+Creating, listing and extracting archives work.
+
+TODO
+Compute and rewrite signature with correct md5sum.
+Recursive selection of files.
+Verification of archive (checksum).
