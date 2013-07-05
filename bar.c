@@ -1457,10 +1457,12 @@ int bar_extract(const char *archive, struct jlhead *files, int *err)
 					tmpname = malloc(tmplen);
 					snprintf(tmpname, tmplen, "%s.%u", cpio.name, getpid());
 					tmpname[tmplen-1] = 0;
-					if(ftest(tmpname, 0777777))
+					if(ftest(tmpname, 0777777)) {
+						free(tmpname);
 						tmpname = 0;
-					else {					
+					} else {					
 						if(rename(cpio.name, tmpname)) {
+							free(tmpname);
 							tmpname = 0;
 						}
 					}
@@ -1474,6 +1476,7 @@ int bar_extract(const char *archive, struct jlhead *files, int *err)
 					if(tmpname && unlink(tmpname)) {
 						fprintf(stderr, "Failed to unlink tmp file %s\n", tmpname);
 					}
+					if(tmpname) free(tmpname);
 				}
 				if(!strcmp(cpio.mode,"c")) {
 					if(!ftest(cpio.name, S_IFCHR)) {
