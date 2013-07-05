@@ -1641,8 +1641,10 @@ struct file *file_new(const char *fn)
 		fd = open(f->name, O_RDONLY);
 		if(fd == -1) return 0;
 		
-		if(MD5Init(&md5))
+		if(MD5Init(&md5)) {
+			fprintf(stderr, "MD5Init failed. Try 'modprobe algif_hash'.\n");
 			return 0;
+		}
 		while(1) {
 			n = read(fd, buf, sizeof(buf));
 			if(n < 1) break;
