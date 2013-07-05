@@ -437,8 +437,12 @@ int cpio_read(gzFile file, struct cpio_host *cpio)
 		cpio->name++;
 	} else {
 		if(strncmp(cpio->name+2, "./", 2)) {
-			cpio->name[0] = '.';
-			cpio->name[1] = '/';
+			if(strcmp(cpio->name+2, "TRAILER!!!")) {
+				cpio->name[0] = '.';
+				cpio->name[1] = '/';
+			} else {
+				cpio->name += 2;
+			}
 		} else {
 			cpio->name += 2;
 		}
@@ -1061,6 +1065,40 @@ int rpm_sig_rewrite(int fd, struct rpm *rpm)
 	}
 	val = htonl(rpm->sumsize);
 	write(fd, &val, 4);
+
+	/* calculate RPMSIGTAG_MD5 
+	 *  This tag specifies the 128-bit MD5 checksum of the combined Header and Archive sections.
+	 */
+	if(lseek(fd, rpm->headeroffset, SEEK_SET)==-1) {
+                fprintf(stderr, "Failed to seek to pos %ju\n", rpm->headeroffset);
+                return -1;
+        }
+	{
+		ssize_t n;
+		unsigned char buf[1024];
+		MD5_CTX md5;
+		unsigned char md5sum[MD5_DIGEST_LENGTH];
+
+		if(MD5Init(&md5)) {
+                        fprintf(stderr, "MD5Init failed. Try 'modprobe algif_hash'.\n");
+                        return -1;
+                }
+		while(1) {
+                        n = read(fd, buf, sizeof(buf));
+                        if(n < 1) break;
+                        MD5Update(&md5, buf, n);
+                }
+                MD5Final(md5sum, &md5);
+
+		if(lseek(fd, rpm->sigtag_md5sum, SEEK_SET)==-1) {
+			fprintf(stderr, "Failed to seek to pos %ju\n", rpm->sigtag_md5sum);
+			return -1;
+		}
+		if(conf.verbose > 1) {
+			fprintf(stderr, "Rewriting SIGTAG_MD5\n");
+		}
+		write(fd, md5sum, MD5_DIGEST_LENGTH);
+	}
 	return 0;
 }
 
