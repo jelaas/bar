@@ -238,6 +238,7 @@ struct rpm *rpm_new()
 {
 	struct rpm *rpm;
 	rpm = malloc(sizeof(struct rpm));
+	if(!rpm) return (void*)0;
 	memset(rpm, 0, sizeof(struct rpm));
 	rpm->sigtags = jl_new();
 	rpm->tags = jl_new();
@@ -249,6 +250,7 @@ struct tag *tag_new(int n)
 	struct tag *tag;
 	
 	tag = malloc(sizeof(struct tag));
+	if(!tag) return (void*)0;
 	memset(tag, 0, sizeof(struct tag));
 	tag->tag = n;
 	tag->type = HDRTYPE_STRING;
@@ -392,7 +394,7 @@ int cpio_read(gzFile file, struct cpio_host *cpio)
 	strncpy(cpio->c_magic, header.c_magic, 6);
 	
 	strncpy(buf, header.c_mode, 8); buf[8] = 0;
-	cpio->c_mode = strtoul(buf, 0, 16);
+	cpio->c_mode = strtoul(buf, (void*)0, 16);
 	cpio->mode = "?";
 	if(S_ISREG(cpio->c_mode)) cpio->mode = "f";
 	if(S_ISDIR(cpio->c_mode)) cpio->mode = "d";
@@ -401,28 +403,28 @@ int cpio_read(gzFile file, struct cpio_host *cpio)
 	if(S_ISBLK(cpio->c_mode)) cpio->mode = "b";
 
 	strncpy(buf, header.c_nlink, 8); buf[8] = 0;
-	cpio->c_nlink = strtoull(buf, 0, 16);
+	cpio->c_nlink = strtoull(buf, (void*)0, 16);
 
 	strncpy(buf, header.c_rdevmajor, 8); buf[8] = 0;
-	cpio->c_rdevmajor = strtoull(buf, 0, 16);
+	cpio->c_rdevmajor = strtoull(buf, (void*)0, 16);
 	strncpy(buf, header.c_rdevminor, 8); buf[8] = 0;
-	cpio->c_rdevminor = strtoull(buf, 0, 16);
+	cpio->c_rdevminor = strtoull(buf, (void*)0, 16);
 	cpio->rdev = makedev(cpio->c_rdevmajor, cpio->c_rdevminor);
 
 	strncpy(buf, header.c_uid, 8); buf[8] = 0;
-	cpio->c_uid = strtoull(buf, 0, 16);
+	cpio->c_uid = strtoull(buf, (void*)0, 16);
 	strncpy(buf, header.c_gid, 8); buf[8] = 0;
-	cpio->c_gid = strtoull(buf, 0, 16);
+	cpio->c_gid = strtoull(buf, (void*)0, 16);
 
 	strncpy(buf, header.c_mtime, 8); buf[8] = 0;
-	cpio->c_mtime = strtoull(buf, 0, 16);
+	cpio->c_mtime = strtoull(buf, (void*)0, 16);
 	
 	strncpy(buf, header.c_filesize, 8); buf[8] = 0;
-	cpio->c_filesize = strtoull(buf, 0, 16);
+	cpio->c_filesize = strtoull(buf, (void*)0, 16);
 	cpio->c_filesize_a = (cpio->c_filesize+3)&~0x3;
 	
 	strncpy(buf, header.c_namesize, 8); buf[8] = 0;
-	cpio->c_namesize = strtoul(buf, 0, 16);
+	cpio->c_namesize = strtoul(buf, (void*)0, 16);
 	cpio->c_namesize += (((sizeof(header)+cpio->c_namesize+3)&~0x3) -
 			    (sizeof(header)+cpio->c_namesize));
 	cpio->name = malloc(cpio->c_namesize+1+strlen("./"));
@@ -646,7 +648,7 @@ int rpm_hdr_write(int fd, struct rpm *rpm, struct header *hdr, struct jlhead *ta
 						fprintf(stderr, "Error writing INT32 array. count=%d\n", tag->count);
 						return -1;
 					}
-					value = strtol(p, 0, 10);
+					value = strtol(p, (void*)0, 10);
 					*(int32_t*)storep = htonl(value);
 					storep += 4;
 					p = strchr(p, '\n');
@@ -675,7 +677,7 @@ int rpm_hdr_write(int fd, struct rpm *rpm, struct header *hdr, struct jlhead *ta
 						fprintf(stderr, "Error writing INT16 array. count=%d\n", tag->count);
 						return -1;
 					}
-					value = strtol(p, 0, 10);
+					value = strtol(p, (void*)0, 10);
 					*(int16_t*)storep = htons(value);
 					storep += 2;
 					p = strchr(p, '\n');
@@ -1624,7 +1626,7 @@ struct file *file_new(const char *fn, int create)
 	unsigned char md5sum[MD5_DIGEST_LENGTH];
 	
 	f = malloc(sizeof(struct file));
-	if(!f) return 0;
+	if(!f) return (void*)0;
 
 	f->name = strdup(fn);
 	
@@ -1644,7 +1646,7 @@ struct file *file_new(const char *fn, int create)
 		return f;
 	}
 	if(lstat(f->name, &f->stat))
-		return 0;
+		return (void*)0;
 	
 	f->md5 = malloc(MD5_DIGEST_LENGTH*2+1);
 	strcpy(f->md5, ""); /* empty by default. only regular files */
@@ -1673,7 +1675,7 @@ struct file *file_new(const char *fn, int create)
 		n = readlink(f->name, (char*)buf, sizeof(buf)-1);
 		if(n == -1) {
 			fprintf(stderr, "Failed to read link %s\n", f->name);
-			return 0;
+			return (void*)0;
 		}
 		buf[n] = 0;
 		f->link = strdup((char*)buf);
@@ -1681,11 +1683,11 @@ struct file *file_new(const char *fn, int create)
 	
 	if(S_ISREG(f->stat.st_mode)) {
 		fd = open(f->name, O_RDONLY);
-		if(fd == -1) return 0;
+		if(fd == -1) return (void*)0;
 		
 		if(MD5Init(&md5)) {
 			fprintf(stderr, "MD5Init failed. Try 'modprobe algif_hash'.\n");
-			return 0;
+			return (void*)0;
 		}
 		while(1) {
 			n = read(fd, buf, sizeof(buf));
