@@ -1460,13 +1460,15 @@ int bar_extract(const char *archive, struct jlhead *files, int *err)
 					if(ftest(tmpname, 0777777))
 						tmpname = 0;
 					else {					
-						if(rename(cpio.name, tmpname))
+						if(rename(cpio.name, tmpname)) {
 							tmpname = 0;
+						}
 					}
-					
+					unlink(cpio.name);
 					ofd = open(cpio.name, O_WRONLY|O_CREAT|O_TRUNC, 0755);
 					if(ofd == -1) {
 						fprintf(stderr, "Failed to create file %s\n", cpio.name);
+						if(tmpname) rename(tmpname, cpio.name);
 						return -1;
 					}
 					if(tmpname && unlink(tmpname)) {
