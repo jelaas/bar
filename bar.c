@@ -44,6 +44,9 @@
 struct {
 	int recursive,create,extract,verbose,verify,list;
 	char *cwd;
+	struct {
+		char *arch, *os, *license, *version, *release;
+	} tag;
 } conf;
 
 struct tag {
@@ -1145,11 +1148,11 @@ int bar_create(const char *archive, struct jlhead *files, int *err)
 	jl_append(rpm->tags, tag);
 
 	tag = tag_new(RPMTAG_VERSION);
-	tag->value = "0";
+	tag->value = conf.tag.version;
 	jl_append(rpm->tags, tag);
 
 	tag = tag_new(RPMTAG_RELEASE);
-	tag->value = "0";
+	tag->value = conf.tag.release;
 	jl_append(rpm->tags, tag);
 
 	tag = tag_new(RPMTAG_SUMMARY);
@@ -1173,7 +1176,7 @@ int bar_create(const char *archive, struct jlhead *files, int *err)
 	jl_append(rpm->tags, tag);
 
 	tag = tag_new(RPMTAG_COPYRIGHT);
-	tag->value = "GPLv2+";
+	tag->value = conf.tag.license;
 	jl_append(rpm->tags, tag);
 
 	tag = tag_new(RPMTAG_GROUP);
@@ -1182,23 +1185,11 @@ int bar_create(const char *archive, struct jlhead *files, int *err)
 	jl_append(rpm->tags, tag);
 
 	tag = tag_new(RPMTAG_OS);
-	{
-		struct utsname buf;
-		if(uname(&buf))
-			tag->value = "Linux";
-		else
-			tag->value = strdup(buf.sysname);
-	}
+	tag->value = conf.tag.os;
         jl_append(rpm->tags, tag);
 
 	tag = tag_new(RPMTAG_ARCH);
-	{
-		struct utsname buf;
-		if(uname(&buf))
-			tag->value = "noarch"; /* x86_64 i586 noarch */
-		else
-			tag->value = strdup(buf.machine);
-	}
+	tag->value = conf.tag.arch;
         jl_append(rpm->tags, tag);
 
 	/* RPMTAG_FILENAMES */
@@ -1722,6 +1713,36 @@ int main(int argc, char **argv)
 		if(!conf.cwd) exit(2);
 	}
 	
+	{
+		struct utsname buf;
+		if(uname(&buf)) {
+			conf.tag.arch = "noarch"; /* x86_64 i586 noarch */
+			conf.tag.os = "Linux";
+		} else {
+			conf.tag.arch = strdup(buf.machine);
+			conf.tag.os = strdup(buf.sysname);
+		}
+	}
+	conf.tag.license = "GPLv2+";
+	conf.tag.version = "0";
+	{
+		struct tm tm;
+		char buf[32];
+		time_t now = time(0);
+		if(localtime_r(&now, &tm)) {
+			sprintf(buf, "%d%02d%02d.%02d%02d%02d",
+				tm.tm_year+1900,
+				tm.tm_mon+1,
+				tm.tm_mday,
+				tm.tm_hour,
+				tm.tm_min,
+				tm.tm_sec);
+			conf.tag.release = strdup(buf);
+		} else {
+			conf.tag.release = "0";
+		}
+	}
+
 	if(jelopt(argv, 'h', "help", 0, &err)) {
 	usage:
 		printf("bar [-hrcxvV] [--version] archive-file [path ..]\n"
@@ -1732,6 +1753,13 @@ int main(int argc, char **argv)
 		       " l -- list\n"
 		       " v -- verbose\n"
 		       " V -- verify\n"
+		       "\n"
+		       " Overriding default tag values:\n"
+		       " --arch <archname>  [from uname]\n"
+		       " --license <string> [GPLv2+]\n"
+		       " --os <osname>      [from uname]\n"
+		       " --release <string> [current date and time YYYYMMDD.HHMMSS]\n"
+		       " --version <string> [0]\n"
 			);
 		exit(rc);
 	}
@@ -1741,6 +1769,11 @@ int main(int argc, char **argv)
 	while(jelopt(argv, 'x', "extract", 0, &err)) conf.extract=1;
 	while(jelopt(argv, 'v', "verbose", 0, &err)) conf.verbose++;
 	while(jelopt(argv, 'V', "verify", 0, &err)) conf.verify=1;
+	while(jelopt(argv, 0, "arch", &conf.tag.arch, &err));
+	while(jelopt(argv, 0, "license", &conf.tag.license, &err));
+	while(jelopt(argv, 0, "os", &conf.tag.os, &err));
+	while(jelopt(argv, 0, "release", &conf.tag.release, &err));
+	while(jelopt(argv, 0, "version", &conf.tag.version, &err));
 	argc = jelopt_final(argv, &err);
 	if(err) {
 		fprintf(stderr, "Syntax error in options.\n");
