@@ -45,7 +45,7 @@ struct {
 	int recursive,create,extract,verbose,verify,list;
 	char *cwd;
 	struct {
-		char *arch, *os, *license, *version, *release;
+		char *arch, *os, *license, *version, *release, *name;
 	} tag;
 } conf;
 
@@ -1113,12 +1113,7 @@ int bar_create(const char *archive, struct jlhead *files, int *err)
 	struct rpm *rpm;
 	struct tag *tag;
 	struct file *f;
-	char *pkgname;
 	char *p;
-	
-	pkgname = strdup(archive);
-	p = strrchr(pkgname, '.');
-	if(p && (strcmp(p, ".rpm")==0)) *p = 0;
 	
 	rpm = rpm_new();
 
@@ -1144,7 +1139,7 @@ int bar_create(const char *archive, struct jlhead *files, int *err)
 	jl_append(rpm->sigtags, tag);
 	
 	tag = tag_new(RPMTAG_NAME);
-	tag->value = pkgname;
+	tag->value = conf.tag.name;
 	jl_append(rpm->tags, tag);
 
 	tag = tag_new(RPMTAG_VERSION);
@@ -1392,7 +1387,7 @@ int bar_create(const char *archive, struct jlhead *files, int *err)
 	fd = open(archive, O_RDWR|O_CREAT|O_TRUNC, 0644);
 	if(fd == -1) return -1;
 
-	strncpy(rpm->lead.name, pkgname, sizeof(rpm->lead)-1);
+	strncpy(rpm->lead.name, conf.tag.name, sizeof(rpm->lead)-1);
 	rpm->lead.major = 3;
 	rpm->lead.minor = 0;
 	rpm->lead.archnum = htons(ARCHNUM_X86);
@@ -1771,6 +1766,7 @@ int main(int argc, char **argv)
 	while(jelopt(argv, 'V', "verify", 0, &err)) conf.verify=1;
 	while(jelopt(argv, 0, "arch", &conf.tag.arch, &err));
 	while(jelopt(argv, 0, "license", &conf.tag.license, &err));
+	while(jelopt(argv, 0, "name", &conf.tag.name, &err));
 	while(jelopt(argv, 0, "os", &conf.tag.os, &err));
 	while(jelopt(argv, 0, "release", &conf.tag.release, &err));
 	while(jelopt(argv, 0, "version", &conf.tag.version, &err));
@@ -1799,6 +1795,14 @@ int main(int argc, char **argv)
 			exit(2);
 		}
 	}
+
+	if(!conf.tag.name) {
+		char *p;
+		conf.tag.name = strdup(archive);
+		p = strrchr(conf.tag.name, '.');
+		if(p && (strcmp(p, ".rpm")==0)) *p = 0;
+	}
+
 
 	for(i=2;i<argc;i++) {
 		struct file *f;
