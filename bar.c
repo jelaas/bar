@@ -813,7 +813,7 @@ int rpm_sig_read(int fd, struct rpm *rpm)
 	jl_foreach(entries, entry) {
 		char buf[2048];
 
-		if(conf.verbose > 1)
+		if(conf.verbose > 3)
 			fprintf(stderr, "Entry: %d [%s] type: %s offset: %d count: %d\n",
 				ntohl(entry->tag), sigstr(ntohl(entry->tag)),
 				hdrtypestr(ntohl(entry->type)), ntohl(entry->offset), ntohl(entry->count));
@@ -935,7 +935,7 @@ int rpm_header_read(int fd, struct rpm *rpm)
 	jl_foreach(entries, entry) {
 		char buf[2048];
 		
-		if(conf.verbose > 1)
+		if(conf.verbose > 3)
 			fprintf(stderr, "Entry: %d [%s] type: %s offset: %d count: %d\n",
 				ntohl(entry->tag), tagstr(ntohl(entry->tag)),
 				hdrtypestr(ntohl(entry->type)), ntohl(entry->offset), ntohl(entry->count));
