@@ -109,7 +109,24 @@ struct cpio_host {
 	size_t uncompressed_size;
 };
 
-int ftest(const char *path, mode_t flags)
+static void hextobin(char *dst, const uint8_t *src, size_t len)
+{
+	int i;
+	static const uint8_t hextable[] = {
+		[0 ... 255] = -1,
+		['0'] = 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+		['A'] = 10, 11, 12, 13, 14, 15,
+		['a'] = 10, 11, 12, 13, 14, 15
+	};
+	for(i=0; i < len;i++) {
+		*dst = hextable[*src++] << 4;
+		*dst += hextable[*src++];
+		dst++;
+	}
+}
+
+
+static int ftest(const char *path, mode_t flags)
 {
 	struct stat b;
 	if(stat(path, &b))
@@ -118,7 +135,7 @@ int ftest(const char *path, mode_t flags)
 	return -1;
 }
 
-int mkpath(const char *path)
+static int mkpath(const char *path)
 {
 	const char *p;
 	const char *n;
@@ -150,7 +167,7 @@ int mkpath(const char *path)
 	return 0;
 }
 
-char *hdrtypestr(int t)
+static const char *hdrtypestr(int t)
 {
 	switch(t) {
 	case HDRTYPE_NULL:
@@ -177,7 +194,7 @@ char *hdrtypestr(int t)
 	return "UNKNOWN";
 }
 
-char *sigstr(int t)
+static const char *sigstr(int t)
 {
 	switch(t) {
 	case SIGTAG_MD5:
@@ -194,7 +211,7 @@ char *sigstr(int t)
 	return "";
 }
 
-char *tagstr(int t)
+static const char *tagstr(int t)
 {
 	switch(t) {
 	case RPMTAG_NAME:
@@ -237,7 +254,7 @@ char *tagstr(int t)
 	return "";
 }
 
-struct rpm *rpm_new()
+static struct rpm *rpm_new()
 {
 	struct rpm *rpm;
 	rpm = malloc(sizeof(struct rpm));
@@ -248,7 +265,7 @@ struct rpm *rpm_new()
 	return rpm;
 }
 
-struct tag *tag_new(int n)
+static struct tag *tag_new(int n)
 {
 	struct tag *tag;
 	
@@ -262,7 +279,7 @@ struct tag *tag_new(int n)
 	return tag;
 }
 
-const char *tag(struct rpm *rpm, int n)
+static const char *tag(struct rpm *rpm, int n)
 {
 	struct tag *tag;
 	
@@ -273,7 +290,18 @@ const char *tag(struct rpm *rpm, int n)
 	return "";
 }
 
-ssize_t cpio_write(gzFile file, const struct file *f, struct rpm *rpm)
+static const char *sig(struct rpm *rpm, int n)
+{
+	struct tag *tag;
+	
+	jl_foreach(rpm->sigtags, tag) {
+		if(tag->tag == n)
+			return tag->value;
+	}
+	return "";
+}
+
+static ssize_t cpio_write(gzFile file, const struct file *f, struct rpm *rpm)
 {
 	struct cpio_header header;
 	struct stat statb;
@@ -375,7 +403,7 @@ ssize_t cpio_write(gzFile file, const struct file *f, struct rpm *rpm)
 	return uncompressed_size;
 }
 
-int cpio_read(gzFile file, struct cpio_host *cpio)
+static int cpio_read(gzFile file, struct cpio_host *cpio)
 {
 	struct cpio_header header;
 	int n;
@@ -456,7 +484,7 @@ int cpio_read(gzFile file, struct cpio_host *cpio)
 	return 0;
 }
 
-int rpm_lead_read(int fd, struct rpm *rpm)
+static int rpm_lead_read(int fd, struct rpm *rpm)
 {
 	if(conf.verbose > 1) fprintf(stderr, "Reading lead sized %d bytes\n", sizeof(struct rpmlead));
 	if(read(fd, &rpm->lead, sizeof(struct rpmlead))!= sizeof(struct rpmlead)) {
@@ -486,7 +514,7 @@ int rpm_lead_read(int fd, struct rpm *rpm)
 	return 0;
 }
 
-int rpm_lead_write(int fd, struct rpm *rpm)
+static int rpm_lead_write(int fd, struct rpm *rpm)
 {
 	if(conf.verbose > 1) fprintf(stderr, "Writing lead, %zd bytes\n", sizeof(struct rpmlead));
 	rpm->lead.magic = htonl(RPMMAGIC);
@@ -497,7 +525,7 @@ int rpm_lead_write(int fd, struct rpm *rpm)
 	return 0;
 }
 
-int rpm_payload_write(int fd, struct rpm *rpm, struct jlhead *files)
+static int rpm_payload_write(int fd, struct rpm *rpm, struct jlhead *files)
 {
 	gzFile file;
 	struct file *f;
@@ -530,7 +558,7 @@ int rpm_payload_write(int fd, struct rpm *rpm, struct jlhead *files)
 	return 0;
 }
 
-int rpm_hdr_write(int fd, struct rpm *rpm, struct header *hdr, struct jlhead *tags, int align)
+static int rpm_hdr_write(int fd, struct rpm *rpm, struct header *hdr, struct jlhead *tags, int align)
 {
 	int i, len;
 	char *store, *storep;
@@ -614,21 +642,8 @@ int rpm_hdr_write(int fd, struct rpm *rpm, struct header *hdr, struct jlhead *ta
 				store = realloc(store, store_len);
 				storep = store + poffset;
 			}
-			{
-				static const uint8_t hextable[] = {
-					[0 ... 255] = -1,
-					['0'] = 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
-					['A'] = 10, 11, 12, 13, 14, 15,
-					['a'] = 10, 11, 12, 13, 14, 15
-				};
-				uint8_t *p;
-				p = (uint8_t*) tag->value;
-				for(i=0; i < len;i++) {
-					*storep = hextable[*p++] << 4;
-					*storep += hextable[*p++];
-					storep++;
-				}
-			}
+			hextobin(storep, (uint8_t*) tag->value, len);
+			storep += len;
 			indexp++;
 			break;
 		case HDRTYPE_INT32:
@@ -735,7 +750,7 @@ int rpm_hdr_write(int fd, struct rpm *rpm, struct header *hdr, struct jlhead *ta
 	return 0;
 }
 
-int rpm_sig_write(int fd, struct rpm *rpm)
+static int rpm_sig_write(int fd, struct rpm *rpm)
 {
 	int rc;
 	rc = rpm_hdr_write(fd, rpm, &rpm->sig, rpm->sigtags, 1);
@@ -748,7 +763,7 @@ int rpm_sig_write(int fd, struct rpm *rpm)
 	return rc;
 }
 
-int rpm_header_write(int fd, struct rpm *rpm)
+static int rpm_header_write(int fd, struct rpm *rpm)
 {
 	int rc;
 	rc = rpm_hdr_write(fd, rpm, &rpm->header, rpm->tags, 0);
@@ -759,7 +774,7 @@ int rpm_header_write(int fd, struct rpm *rpm)
 	return rc;
 }
 
-int rpm_sig_read(int fd, struct rpm *rpm)
+static int rpm_sig_read(int fd, struct rpm *rpm)
 {
 	int i;
 	char *store;
@@ -882,7 +897,7 @@ int rpm_sig_read(int fd, struct rpm *rpm)
 	return 0;
 }
 
-int rpm_header_read(int fd, struct rpm *rpm)
+static int rpm_header_read(int fd, struct rpm *rpm)
 {
 	int i;
 	char *store;
@@ -1043,7 +1058,7 @@ int rpm_header_read(int fd, struct rpm *rpm)
 	return 0;
 }
 
-int rpm_sig_rewrite(int fd, struct rpm *rpm)
+static int rpm_sig_rewrite(int fd, struct rpm *rpm)
 {
 	uint32_t val;
 	
@@ -1107,7 +1122,7 @@ int rpm_sig_rewrite(int fd, struct rpm *rpm)
 	return 0;
 }
 
-int bar_create(const char *archive, struct jlhead *files, int *err)
+static int bar_create(const char *archive, struct jlhead *files, int *err)
 {
 	int fd;
 	struct rpm *rpm;
@@ -1407,7 +1422,7 @@ int bar_create(const char *archive, struct jlhead *files, int *err)
 	return 0;
 }
 
-int bar_extract(const char *archive, struct jlhead *files, int *err)
+static int bar_extract(const char *archive, struct jlhead *files, int *err)
 {
 	int fd;
 	struct rpm *rpm;
@@ -1420,6 +1435,42 @@ int bar_extract(const char *archive, struct jlhead *files, int *err)
 	
 	if(rpm_lead_read(fd, rpm)) return -1;
 	if(rpm_sig_read(fd, rpm)) return -1;
+
+	/* verify MD5 signature */
+	{
+		ssize_t n;
+		int i;
+		unsigned char buf[1024];
+		MD5_CTX md5;
+		unsigned char md5sum[MD5_DIGEST_LENGTH];
+		char sigmd5sum[MD5_DIGEST_LENGTH*2+1];
+
+		if(MD5Init(&md5)) {
+                        fprintf(stderr, "MD5Init failed. Try 'modprobe algif_hash'.\n");
+                        return -1;
+                }
+		while(1) {
+                        n = read(fd, buf, sizeof(buf));
+                        if(n < 1) break;
+                        MD5Update(&md5, buf, n);
+                }
+                MD5Final(md5sum, &md5);
+		for(i=0;i<MD5_DIGEST_LENGTH;i++) {
+			sprintf(sigmd5sum+i*2, "%02x", md5sum[i]);
+		}
+		if(strcmp(sig(rpm, SIGTAG_MD5), sigmd5sum)) {
+			fprintf(stderr, "MD5sum verification failed: %s %s\n", sig(rpm, SIGTAG_MD5), sigmd5sum); 
+		} else {
+			if(conf.verbose > 2)
+				fprintf(stderr, "MD5sum verification succeeded.\n");
+		}
+		
+	}
+	
+	if(lseek(fd, rpm->headeroffset, SEEK_SET)==-1) {
+		fprintf(stderr, "Failed to seek to pos %ju\n", rpm->headeroffset);
+	}
+	
 	if(rpm_header_read(fd, rpm)) return -1;
 
 	if(strcmp(tag(rpm, RPMTAG_PAYLOADFORMAT), "cpio")) {
@@ -1602,7 +1653,7 @@ int bar_extract(const char *archive, struct jlhead *files, int *err)
 	return 0;
 }
 
-struct file *file_new(const char *fn, int create)
+static struct file *file_new(const char *fn, int create)
 {
 	struct file *f;
 	int fd, i;
