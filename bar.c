@@ -109,7 +109,7 @@ struct cpio_host {
 	size_t uncompressed_size;
 };
 
-static void hextobin(char *dst, const uint8_t *src, size_t len)
+static int hextobin(char *dst, const uint8_t *src, size_t len)
 {
 	int i;
 	static const uint8_t hextable[] = {
@@ -119,10 +119,12 @@ static void hextobin(char *dst, const uint8_t *src, size_t len)
 		['a'] = 10, 11, 12, 13, 14, 15
 	};
 	for(i=0; i < len;i++) {
+		if(!*src) return -1;
 		*dst = hextable[*src++] << 4;
 		*dst += hextable[*src++];
 		dst++;
 	}
+	return 0;
 }
 
 
@@ -642,7 +644,10 @@ static int rpm_hdr_write(int fd, struct rpm *rpm, struct header *hdr, struct jlh
 				store = realloc(store, store_len);
 				storep = store + poffset;
 			}
-			hextobin(storep, (uint8_t*) tag->value, len);
+			if(hextobin(storep, (uint8_t*) tag->value, len)) {
+				fprintf(stderr, "Failed to convert hex to binary.\n");
+				return -1;
+			}
 			storep += len;
 			indexp++;
 			break;
