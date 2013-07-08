@@ -46,6 +46,7 @@ struct {
 	char *cwd;
 	struct {
 		char *arch, *os, *license, *version, *release, *name;
+		char *fuser, *fgroup;
 	} tag;
 } conf;
 
@@ -1710,22 +1711,30 @@ static struct file *file_new(const char *fn, int create)
 	f->md5 = malloc(MD5_DIGEST_LENGTH*2+1);
 	strcpy(f->md5, ""); /* empty by default. only regular files */
 	
-	f->user = "root";
-	{
-		struct passwd *pw;
-		pw = getpwuid(f->stat.st_uid);
-		if(pw) {
-			if(strlen(pw->pw_name))
-				f->user = strdup(pw->pw_name);
+	if(conf.tag.fuser)
+		f->user = conf.tag.fuser;
+	else {
+		f->user = "root";
+		{
+			struct passwd *pw;
+			pw = getpwuid(f->stat.st_uid);
+			if(pw) {
+				if(strlen(pw->pw_name))
+					f->user = strdup(pw->pw_name);
+			}
 		}
 	}
-	f->group = "root";
-	{
-		struct group *gr;
-		gr = getgrgid(f->stat.st_gid);
-		if(gr) {
-			if(strlen(gr->gr_name))
-				f->group = strdup(gr->gr_name);
+	if(conf.tag.fgroup)
+		f->group = conf.tag.fgroup;
+	else {
+		f->group = "root";
+		{
+			struct group *gr;
+			gr = getgrgid(f->stat.st_gid);
+			if(gr) {
+				if(strlen(gr->gr_name))
+					f->group = strdup(gr->gr_name);
+			}
 		}
 	}
 	f->link = "";
@@ -1810,10 +1819,12 @@ int main(int argc, char **argv)
 			conf.tag.release = "0";
 		}
 	}
+	conf.tag.fuser = (void*)0;
+	conf.tag.fgroup = (void*)0;
 
 	if(jelopt(argv, 'h', "help", 0, &err)) {
 	usage:
-		printf("bar [-hrcxvV] [--version] archive-file [path ..]\n"
+		printf("bar [-hriclxvV] [--version] archive-file [path ..]\n"
 		       " h -- help\n"
 		       " r -- recursive\n"
 		       " c -- create\n"
@@ -1824,11 +1835,14 @@ int main(int argc, char **argv)
 		       " V -- verify\n"
 		       "\n"
 		       " Overriding default tag values:\n"
-		       " --arch <archname>  [from uname]\n"
-		       " --license <string> [GPLv2+]\n"
-		       " --os <osname>      [from uname]\n"
-		       " --release <string> [current date and time YYYYMMDD.HHMMSS]\n"
-		       " --version <string> [0]\n"
+		       " --arch <archname>    [from uname]\n"
+		       " --fgroup <groupname> [file owner]\n"
+		       " --fuser <username>   [file owner]\n"
+		       " --license <string>   [GPLv2+]\n"
+		       " --name <string>      [from archive-file name]\n"
+		       " --os <osname>        [from uname]\n"
+		       " --release <string>   [current date and time YYYYMMDD.HHMMSS]\n"
+		       " --version <string>   [0]\n"
 			);
 		exit(rc);
 	}
@@ -1840,6 +1854,8 @@ int main(int argc, char **argv)
 	while(jelopt(argv, 'v', "verbose", 0, &err)) conf.verbose++;
 	while(jelopt(argv, 'V', "verify", 0, &err)) conf.verify=1;
 	while(jelopt(argv, 0, "arch", &conf.tag.arch, &err));
+	while(jelopt(argv, 0, "fgroup", &conf.tag.fgroup, &err));
+	while(jelopt(argv, 0, "fuser", &conf.tag.fuser, &err));
 	while(jelopt(argv, 0, "license", &conf.tag.license, &err));
 	while(jelopt(argv, 0, "name", &conf.tag.name, &err));
 	while(jelopt(argv, 0, "os", &conf.tag.os, &err));
