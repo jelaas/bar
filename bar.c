@@ -42,7 +42,7 @@
  */
 
 struct {
-	int recursive,create,extract,verbose,verify,list;
+	int recursive,create,extract,verbose,verify,list,info;
 	char *cwd;
 	struct {
 		char *arch, *os, *license, *version, *release, *name;
@@ -636,7 +636,8 @@ static int rpm_hdr_write(int fd, struct rpm *rpm, struct header *hdr, struct jlh
 		case HDRTYPE_BIN:
 			len = (strlen(tag->value)+1)/2;
 			indexp->count = htonl(len);
-			fprintf(stderr, "Writing binary of size %d bytes\n", ntohl(indexp->count));
+			if(conf.verbose > 2)
+				fprintf(stderr, "Writing binary of size %d bytes\n", ntohl(indexp->count));
 			while(((storep-store)+len+8) > store_len) {
 				off_t poffset;
 				poffset = storep-store;
@@ -660,7 +661,8 @@ static int rpm_hdr_write(int fd, struct rpm *rpm, struct header *hdr, struct jlh
 				storep = store + poffset;
 			}
 			
-			fprintf(stderr, "Writing 32bit value to alignment: %d\n", ((storep-store)) % 4);
+			if(conf.verbose > 2)
+				fprintf(stderr, "Writing 32bit value to alignment: %d\n", ((storep-store)) % 4);
 			
 			{
 				char *p;
@@ -689,7 +691,8 @@ static int rpm_hdr_write(int fd, struct rpm *rpm, struct header *hdr, struct jlh
 				storep = store + poffset;
 			}
 			
-			fprintf(stderr, "Writing 16bit value to alignment: %d\n", ((storep-store)) % 2);
+			if(conf.verbose > 2)
+				fprintf(stderr, "Writing 16bit value to alignment: %d\n", ((storep-store)) % 2);
 			
 			{
 				char *p;
@@ -721,13 +724,15 @@ static int rpm_hdr_write(int fd, struct rpm *rpm, struct header *hdr, struct jlh
 	/* set size of store */
 	hdr->size = htonl(storep-store);
 
-	fprintf(stderr, "Writing index header sized: %d bytes\n", sizeof(struct header));
+	if(conf.verbose > 2)
+		fprintf(stderr, "Writing index header sized: %d bytes\n", sizeof(struct header));
 	if(write(fd, hdr, sizeof(struct header))!= sizeof(struct header)) {
 		fprintf(stderr, "Failed to write signature header\n");
                 return -1;
 	}
 
-	fprintf(stderr, "Writing index sized: %d bytes\n", tags->len * sizeof(struct indexentry));
+	if(conf.verbose > 2)
+		fprintf(stderr, "Writing index sized: %d bytes\n", tags->len * sizeof(struct indexentry));
 	write(fd, index, tags->len * sizeof(struct indexentry));
 	
 	/* align */
@@ -746,7 +751,8 @@ static int rpm_hdr_write(int fd, struct rpm *rpm, struct header *hdr, struct jlh
 	if(off_payloadsize != -1) rpm->sigtag_payloadsize = off_payloadsize + pos;
 
 	/* write store */
-	fprintf(stderr, "Writing store sized: %d bytes\n", i);
+	if(conf.verbose > 2)
+		fprintf(stderr, "Writing store sized: %d bytes\n", i);
 	if(write(fd, store, i)!=i) {
 		fprintf(stderr, "Failed to write signature store\n");
 		return -1;
@@ -803,7 +809,7 @@ static int rpm_sig_read(int fd, struct rpm *rpm)
                 return -1;
         }
 	
-	if(conf.verbose > 1) fprintf(stderr, "Reading index sized %d bytes\n",
+	if(conf.verbose > 2) fprintf(stderr, "Reading index sized %d bytes\n",
 				     sizeof(struct indexentry)*ntohl(rpm->sig.entries));
 	for(i=0;i<ntohl(rpm->sig.entries);i++) {
 		entry = malloc(sizeof(struct indexentry));
@@ -926,7 +932,7 @@ static int rpm_header_read(int fd, struct rpm *rpm)
                 return -1;
         }
 	
-	if(conf.verbose > 1) fprintf(stderr, "Reading index sized %d\n",
+	if(conf.verbose > 2) fprintf(stderr, "Reading index sized %d\n",
 				     sizeof(struct indexentry)*ntohl(rpm->header.entries));
 	for(i=0;i<ntohl(rpm->header.entries);i++) {
 		entry = malloc(sizeof(struct indexentry));
@@ -1478,6 +1484,17 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 	
 	if(rpm_header_read(fd, rpm)) return -1;
 
+	if(conf.info) {
+		printf("name=%s\n", tag(rpm, RPMTAG_NAME));
+		printf("version=%s\n", tag(rpm, RPMTAG_VERSION));
+		printf("release=%s\n", tag(rpm, RPMTAG_RELEASE));
+		printf("os=%s\n", tag(rpm, RPMTAG_OS));
+		printf("arch=%s\n", tag(rpm, RPMTAG_ARCH));
+		printf("license=%s\n", tag(rpm, RPMTAG_COPYRIGHT));
+		printf("size=%s\n", tag(rpm, RPMTAG_SIZE));
+		return 0;
+	}
+
 	if(strcmp(tag(rpm, RPMTAG_PAYLOADFORMAT), "cpio")) {
 		fprintf(stderr, "Unsupported payload format '%s'\n", tag(rpm, RPMTAG_PAYLOADFORMAT));
 		return -1;
@@ -1774,7 +1791,7 @@ int main(int argc, char **argv)
 			conf.tag.os = strdup(buf.sysname);
 		}
 	}
-	conf.tag.license = "GPLv2+";
+	conf.tag.license = "Unknown";
 	conf.tag.version = "0";
 	{
 		struct tm tm;
@@ -1802,6 +1819,7 @@ int main(int argc, char **argv)
 		       " c -- create\n"
 		       " x -- extract\n"
 		       " l -- list\n"
+		       " i -- show header info\n"
 		       " v -- verbose\n"
 		       " V -- verify\n"
 		       "\n"
@@ -1816,6 +1834,7 @@ int main(int argc, char **argv)
 	}
 	while(jelopt(argv, 'r', "recursive", 0, &err)) conf.recursive=1;
 	while(jelopt(argv, 'c', "create", 0, &err)) conf.create=1;
+	while(jelopt(argv, 'i', "info", 0, &err)) conf.extract=conf.info=1;
 	while(jelopt(argv, 'l', "list", 0, &err)) conf.extract=conf.list=1;
 	while(jelopt(argv, 'x', "extract", 0, &err)) conf.extract=1;
 	while(jelopt(argv, 'v', "verbose", 0, &err)) conf.verbose++;
