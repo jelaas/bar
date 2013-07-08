@@ -9,12 +9,14 @@ bar [-hrcxvV] [--version] archive-file [path ..]
  c -- create
  x -- extract
  l -- list
+ i -- info
  v -- verbose
  V -- verify
 
  Overriding default tag values:
  --arch <archname>  [from uname]
  --license <string> [GPLv2+]
+ --name <string>    [from archive-file name]
  --os <osname>      [from uname]
  --release <string> [current date and time YYYYMMDD.HHMMSS]
  --version <string> [0]
@@ -37,4 +39,3 @@ TODO
 Recursive selection of files.
 Verification of file (checksum).
 Ability to specify values of some tags: summary, description, group.
-Show package info summary [-i]: name, os, arch, version etc.
