@@ -1114,7 +1114,7 @@ static int rpm_sig_rewrite(int fd, struct rpm *rpm)
 		unsigned char md5sum[MD5_DIGEST_LENGTH];
 
 		if(MD5Init(&md5)) {
-                        fprintf(stderr, "MD5Init failed. Try 'modprobe algif_hash'.\n");
+                        fprintf(stderr, "MD5Init failed.\n");
                         return -1;
                 }
 		while(1) {
@@ -1460,7 +1460,7 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 		char sigmd5sum[MD5_DIGEST_LENGTH*2+1];
 
 		if(MD5Init(&md5)) {
-                        fprintf(stderr, "MD5Init failed. Try 'modprobe algif_hash'.\n");
+                        fprintf(stderr, "MD5Init failed.\n");
                         return -1;
                 }
 		while(1) {
@@ -1757,7 +1757,7 @@ static int file_new(struct jlhead *files, const char *fn, int create, int recurs
 		if(fd == -1) return -1;
 		
 		if(MD5Init(&md5)) {
-			fprintf(stderr, "MD5Init failed. Try 'modprobe algif_hash'.\n");
+			fprintf(stderr, "MD5Init failed.\n");
 			return -1;
 		}
 		while(1) {

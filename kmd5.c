@@ -1,4 +1,4 @@
-#include "md5.h"
+#include "kmd5.h"
 
 #include <sys/socket.h>
 #include <sys/types.h>
