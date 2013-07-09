@@ -539,6 +539,7 @@ static int rpm_payload_write(int fd, struct rpm *rpm, struct jlhead *files)
 	zfd = dup(fd);
 	file = gzdopen(zfd, "w");
 	jl_foreach(files, f) {
+		if(conf.verbose) printf("%s\n", f->normalized_name);
 		if((n=cpio_write(file, f, rpm)) == -1) {
 			fprintf(stderr, "Error writing cpio header\n");
 			return -1;
@@ -1772,6 +1773,7 @@ static int file_new(struct jlhead *files, const char *fn, int create, int recurs
 	if(conf.verbose > 2) {
 		fprintf(stderr, "Added file: %s md5sum: %s\n", f->name, f->md5);
 	}
+	jl_append(files, f);
 	return 0;
 }
 
