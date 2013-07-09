@@ -36,8 +36,8 @@ Creating, listing and extracting archives work.
 MD5sum is now calculated and written into the signature.
 The SIGTAG MD5sum is verified.
 You can now override: arch, license, name, os, release, version.
+Recursive selection of files supported.
 
 TODO
-Recursive selection of files.
 Verification of file (checksum).
 Ability to specify values of some tags: summary, description, group.
