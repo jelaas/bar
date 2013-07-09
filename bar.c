@@ -1824,7 +1824,7 @@ int main(int argc, char **argv)
 
 	if(jelopt(argv, 'h', "help", 0, &err)) {
 	usage:
-		printf("bar [-hriclxvV] [--version] archive-file [path ..]\n"
+		printf("bar [-hriclxv] archive-file [path ..]\n"
 		       " h -- help\n"
 		       " r -- recursive\n"
 		       " c -- create\n"
@@ -1832,7 +1832,6 @@ int main(int argc, char **argv)
 		       " l -- list\n"
 		       " i -- show header info\n"
 		       " v -- verbose\n"
-		       " V -- verify\n"
 		       "\n"
 		       " Overriding default tag values:\n"
 		       " --arch <archname>    [from uname]\n"
