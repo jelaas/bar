@@ -1676,7 +1676,7 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 	return 0;
 }
 
-static struct file *file_new(const char *fn, int create)
+static int file_new(struct jlhead *files, const char *fn, int create, int recursive)
 {
 	struct file *f;
 	int fd, i;
@@ -1686,7 +1686,7 @@ static struct file *file_new(const char *fn, int create)
 	unsigned char md5sum[MD5_DIGEST_LENGTH];
 	
 	f = malloc(sizeof(struct file));
-	if(!f) return (void*)0;
+	if(!f) return -1;
 
 	f->name = strdup(fn);
 	
@@ -1703,10 +1703,11 @@ static struct file *file_new(const char *fn, int create)
 	}
 	if(!create) {
 		/* we are done. no need to fetch additional file info when not creating an archive */
-		return f;
+		jl_append(files, f);
+		return 0;
 	}
 	if(lstat(f->name, &f->stat))
-		return (void*)0;
+		return -1;
 	
 	f->md5 = malloc(MD5_DIGEST_LENGTH*2+1);
 	strcpy(f->md5, ""); /* empty by default. only regular files */
@@ -1743,7 +1744,7 @@ static struct file *file_new(const char *fn, int create)
 		n = readlink(f->name, (char*)buf, sizeof(buf)-1);
 		if(n == -1) {
 			fprintf(stderr, "Failed to read link %s\n", f->name);
-			return (void*)0;
+			return -1;
 		}
 		buf[n] = 0;
 		f->link = strdup((char*)buf);
@@ -1751,11 +1752,11 @@ static struct file *file_new(const char *fn, int create)
 	
 	if(S_ISREG(f->stat.st_mode)) {
 		fd = open(f->name, O_RDONLY);
-		if(fd == -1) return (void*)0;
+		if(fd == -1) return -1;
 		
 		if(MD5Init(&md5)) {
 			fprintf(stderr, "MD5Init failed. Try 'modprobe algif_hash'.\n");
-			return (void*)0;
+			return -1;
 		}
 		while(1) {
 			n = read(fd, buf, sizeof(buf));
@@ -1771,7 +1772,7 @@ static struct file *file_new(const char *fn, int create)
 	if(conf.verbose > 2) {
 		fprintf(stderr, "Added file: %s md5sum: %s\n", f->name, f->md5);
 	}
-	return f;
+	return 0;
 }
 
 int main(int argc, char **argv)
@@ -1895,13 +1896,10 @@ int main(int argc, char **argv)
 
 
 	for(i=2;i<argc;i++) {
-		struct file *f;
-		f = file_new(argv[i], conf.create);
-		if(!f) {
+		if(file_new(files, argv[i], conf.create, conf.recursive)) {
 			fprintf(stderr, "Failed to add file %s. Aborting.\n", argv[i]);
 			exit(1);
 		}
-		jl_append(files, f);
 	}
 	
 	if(conf.extract) {
