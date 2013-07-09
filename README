@@ -26,7 +26,6 @@ bar [-hriclxvV] [--version] archive-file [path ..]
 Dependencies:
 - zlib
 - C compiler
-- Fairly recent Linux kernel, with the userspace crypto API.
 Thats all!
 
 Link statically and enjoy.
@@ -39,5 +38,5 @@ You can now override: arch, license, name, os, release, version.
 Recursive selection of files supported.
 
 TODO
-Verification of file (checksum).
+Verification of per file (checksum).
 Ability to specify values of some tags: summary, description, group.
