@@ -132,7 +132,7 @@ static int hextobin(char *dst, const uint8_t *src, size_t len)
 static int ftest(const char *path, mode_t flags)
 {
 	struct stat b;
-	if(stat(path, &b))
+	if(lstat(path, &b))
 		return -1;
 	if(b.st_mode & flags) return 0;
 	return -1;
