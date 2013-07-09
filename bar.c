@@ -21,6 +21,7 @@
 #include <sys/utsname.h>
 #include <pwd.h>
 #include <grp.h>
+#include <dirent.h>
 
 #include "md5.h"
 #include "bar_rpm.h"
@@ -1773,6 +1774,35 @@ static int file_new(struct jlhead *files, const char *fn, int create, int recurs
 	if(conf.verbose > 2) {
 		fprintf(stderr, "Added file: %s md5sum: %s\n", f->name, f->md5);
 	}
+
+	if(recursive && S_ISDIR(f->stat.st_mode)) {
+		DIR *dir;
+		struct dirent *ent;
+		
+		jl_append(files, f);
+		
+		if(!(dir = opendir(fn))) {
+			fprintf(stderr, "Failed to open dir %s\n", fn);
+			return -1;
+		}
+		while((ent = readdir(dir))) {
+			if(!strcmp(ent->d_name, ".")) continue;
+			if(!strcmp(ent->d_name, "..")) continue;
+			
+			if(strlen(fn)+strlen(ent->d_name) > (sizeof(buf)-1)) {
+				fprintf(stderr, "File path to long.\n");
+				return -1;
+			}
+			
+			snprintf((char*)buf, sizeof(buf), "%s/%s", fn, ent->d_name);
+			if(file_new(files, (char*)buf, create, recursive)) {
+				fprintf(stderr, "Failed to add file %s\n", buf);
+				return -1;
+			}
+		}
+		return 0;
+	}
+
 	jl_append(files, f);
 	return 0;
 }
