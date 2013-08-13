@@ -44,6 +44,7 @@
 
 struct {
 	int recursive,create,extract,verbose,verify,list,info;
+	char *prefix;
 	char *cwd;
 	struct {
 		char *arch, *os, *license, *version, *release, *name;
@@ -410,7 +411,7 @@ static ssize_t cpio_write(gzFile file, const struct file *f, struct rpm *rpm)
 static int cpio_read(gzFile file, struct cpio_host *cpio)
 {
 	struct cpio_header header;
-	int n;
+	int n, trailer=0;
 	char buf[16];
 	
 	cpio->uncompressed_size = 0;
@@ -469,20 +470,35 @@ static int cpio_read(gzFile file, struct cpio_host *cpio)
 		fprintf(stderr, "Error reading name from cpio.\n");
 		return -1;
 	}
+	if(strcmp(cpio->name+2, "TRAILER!!!")==0)
+		trailer=1;
 	if(cpio->name[2] == '/') {
 		cpio->name[1] = '.';
 		cpio->name++;
 	} else {
 		if(strncmp(cpio->name+2, "./", 2)) {
-			if(strcmp(cpio->name+2, "TRAILER!!!")) {
+			if(trailer) {
+				cpio->name += 2;
+			} else {
 				cpio->name[0] = '.';
 				cpio->name[1] = '/';
-			} else {
-				cpio->name += 2;
 			}
 		} else {
 			cpio->name += 2;
 		}
+	}
+	if(conf.prefix && (trailer==0) ) {
+		char *p;
+		if(strncmp(cpio->name, "./", 2)==0)
+			cpio->name+=2;
+		p = malloc(strlen(conf.prefix)+strlen(cpio->name)+1);
+		if(!p) {
+			fprintf(stderr, "Failed to allocate memory for prefixed name of %s\n", cpio->name);
+			return -1;
+		}
+		strcpy(p, conf.prefix);
+		strcat(p, cpio->name);
+		cpio->name = p;
 	}
 	cpio->uncompressed_size += n;
 	return 0;
@@ -1708,6 +1724,14 @@ static int file_new(struct jlhead *files, const char *fn, int create, int recurs
 		jl_append(files, f);
 		return 0;
 	}
+	if(conf.prefix) {
+		char *p;
+		p = malloc(strlen(conf.prefix)+strlen(f->normalized_name)+1);
+		strcpy(p, conf.prefix);
+		strcat(p, f->normalized_name);
+		f->normalized_name = p;
+	}
+
 	if(lstat(f->name, &f->stat))
 		return -1;
 	
@@ -1822,6 +1846,8 @@ int main(int argc, char **argv)
 		conf.cwd = realloc(conf.cwd, i);
 		if(!conf.cwd) exit(2);
 	}
+
+	conf.prefix = 0;
 	
 	{
 		struct utsname buf;
@@ -1875,6 +1901,9 @@ int main(int argc, char **argv)
 		       " --os <osname>        [from uname]\n"
 		       " --release <string>   [current date and time YYYYMMDD.HHMMSS]\n"
 		       " --version <string>   [0]\n"
+		       "\n"
+		       " Create/extract options:\n"
+		       " --prefix <path>      add prefix <path> to all filepaths\n"
 			);
 		exit(rc);
 	}
@@ -1893,6 +1922,7 @@ int main(int argc, char **argv)
 	while(jelopt(argv, 0, "os", &conf.tag.os, &err));
 	while(jelopt(argv, 0, "release", &conf.tag.release, &err));
 	while(jelopt(argv, 0, "version", &conf.tag.version, &err));
+	while(jelopt(argv, 0, "prefix", &conf.prefix, &err));
 	argc = jelopt_final(argv, &err);
 	if(err) {
 		fprintf(stderr, "Syntax error in options.\n");
