@@ -153,16 +153,16 @@ static int mkpath(const char *path)
 		n = strchr(p, '/');
 		if(!n) break;
 		if( (n-p) >= sizeof(buf)) {
-			fprintf(stderr, "Path element too long\n");
+			fprintf(stderr, "bar: Path element too long\n");
 			return -1;
 		}
 		strncpy(buf, p, n-p);
 		buf[n-p] = 0;
 		if(chdir(buf)) {
-			if(conf.verbose) fprintf(stderr, "Creating subdirectory '%s'\n", buf);
+			if(conf.verbose) fprintf(stderr, "bar: Creating subdirectory '%s'\n", buf);
 			mkdir(buf, 0755);
 			if(chdir(buf)) {
-				fprintf(stderr, "Failed chdir('%s')\n", buf);
+				fprintf(stderr, "bar: Failed chdir('%s')\n", buf);
 				return -1;
 			}
 		}
@@ -319,7 +319,7 @@ static ssize_t cpio_write(gzFile file, const struct file *f, struct rpm *rpm)
 	ssize_t count, uncompressed_size = 0;
 
 	if(conf.verbose > 1)
-		fprintf(stderr, "Adding %s to index\n", f->name);
+		fprintf(stderr, "bar: Adding %s to index\n", f->name);
 
 	if(!strcmp("TRAILER!!!", f->name))
 		trailer = 1;
@@ -328,7 +328,7 @@ static ssize_t cpio_write(gzFile file, const struct file *f, struct rpm *rpm)
 		memset(&statb, 0, sizeof(statb));
 	else {
 		if(lstat(f->name, &statb)) {
-			fprintf(stderr, "Failed to stat %s\n", f->name);
+			fprintf(stderr, "bar: Failed to stat %s\n", f->name);
 			return -1;
 		}
 	}
@@ -365,7 +365,7 @@ static ssize_t cpio_write(gzFile file, const struct file *f, struct rpm *rpm)
 	uncompressed_size += n;
 	
 	if(conf.verbose > 1)
-		fprintf(stderr, "Aligned [4] %d to %d\n",
+		fprintf(stderr, "bar: Aligned [4] %d to %d\n",
 			sizeof(header)+strlen(f->normalized_name),
 			(sizeof(header)+strlen(f->normalized_name)+3)&~3);
 	n = gzwrite(file, f->normalized_name, ((sizeof(header)+strlen(f->normalized_name)+3)&~3) - sizeof(header));
@@ -375,7 +375,7 @@ static ssize_t cpio_write(gzFile file, const struct file *f, struct rpm *rpm)
 	if(S_ISREG(statb.st_mode)) {
 		/* write file, 4-byte aligned */
 		if(conf.verbose > 1)
-			fprintf(stderr, "Writing contents of file %s\n", f->name);
+			fprintf(stderr, "bar: Writing contents of file %s\n", f->name);
 		filesize = statb.st_size;
 		ifd = open(f->name, O_RDONLY);
 		if(ifd == -1) return -1;
@@ -418,13 +418,13 @@ static int cpio_read(gzFile file, struct cpio_host *cpio)
 	
 	n = gzread(file, &header, sizeof(header));
 	if(n <= 0) {
-		fprintf(stderr, "Failed reading the cpio_header. EOF?\n");
+		fprintf(stderr, "bar: Failed reading the cpio_header. EOF?\n");
 		return -1;
 	}
 	cpio->uncompressed_size += n;
 	
 	if(strncmp(header.c_magic, CPIOMAGIC, 6)) {
-		fprintf(stderr, "Wrong cpio magic\n");
+		fprintf(stderr, "bar: Wrong cpio magic\n");
 		return -1;
 	}
 	strncpy(cpio->c_magic, header.c_magic, 6);
@@ -467,7 +467,7 @@ static int cpio_read(gzFile file, struct cpio_host *cpio)
 	n = gzread(file, cpio->name+2, cpio->c_namesize);
 	if(n>0) cpio->name[n+2] = 0;
 	else { 
-		fprintf(stderr, "Error reading name from cpio.\n");
+		fprintf(stderr, "bar: Error reading name from cpio.\n");
 		return -1;
 	}
 	if(strcmp(cpio->name+2, "TRAILER!!!")==0)
@@ -493,7 +493,7 @@ static int cpio_read(gzFile file, struct cpio_host *cpio)
 			cpio->name+=2;
 		p = malloc(strlen(conf.prefix)+strlen(cpio->name)+1);
 		if(!p) {
-			fprintf(stderr, "Failed to allocate memory for prefixed name of %s\n", cpio->name);
+			fprintf(stderr, "bar: Failed to allocate memory for prefixed name of %s\n", cpio->name);
 			return -1;
 		}
 		strcpy(p, conf.prefix);
@@ -506,29 +506,29 @@ static int cpio_read(gzFile file, struct cpio_host *cpio)
 
 static int rpm_lead_read(int fd, struct rpm *rpm)
 {
-	if(conf.verbose > 1) fprintf(stderr, "Reading lead sized %d bytes\n", sizeof(struct rpmlead));
+	if(conf.verbose > 1) fprintf(stderr, "bar: Reading lead sized %d bytes\n", sizeof(struct rpmlead));
 	if(read(fd, &rpm->lead, sizeof(struct rpmlead))!= sizeof(struct rpmlead)) {
-		fprintf(stderr, "Failed to read lead.\n");
+		fprintf(stderr, "bar: Failed to read lead.\n");
                 return -1;
 	}
 	if(ntohl(rpm->lead.magic) != RPMMAGIC) {
-		fprintf(stderr, "Incorrect rpm magic in lead.\n");
+		fprintf(stderr, "bar: Incorrect rpm magic in lead.\n");
 		return -1;
 	}
 
 	if(conf.verbose > 2) {
-		fprintf(stderr, "LEAD name: %s\n", rpm->lead.name);
-		fprintf(stderr, "LEAD major: %x minor: %x\n", rpm->lead.major, rpm->lead.minor);
-		fprintf(stderr, "LEAD type: %x\n", ntohs(rpm->lead.type));
+		fprintf(stderr, "bar: LEAD name: %s\n", rpm->lead.name);
+		fprintf(stderr, "bar: LEAD major: %x minor: %x\n", rpm->lead.major, rpm->lead.minor);
+		fprintf(stderr, "bar: LEAD type: %x\n", ntohs(rpm->lead.type));
 		if(ntohs(rpm->lead.archnum) <= ARCHNUM__MAX)
-			fprintf(stderr, "LEAD archnum: %s\n", table_archnum[ntohs(rpm->lead.archnum)].name);
+			fprintf(stderr, "bar: LEAD archnum: %s\n", table_archnum[ntohs(rpm->lead.archnum)].name);
 		else
-			fprintf(stderr, "LEAD archnum: %x\n", ntohs(rpm->lead.archnum));
+			fprintf(stderr, "bar: LEAD archnum: %x\n", ntohs(rpm->lead.archnum));
 		if(ntohs(rpm->lead.osnum) <= OSNUM__MAX)
-			fprintf(stderr, "LEAD osnum: %s\n", table_osnum[ntohs(rpm->lead.osnum)].name);
+			fprintf(stderr, "bar: LEAD osnum: %s\n", table_osnum[ntohs(rpm->lead.osnum)].name);
 		else
-			fprintf(stderr, "LEAD osnum: %x\n", ntohs(rpm->lead.osnum));
-		fprintf(stderr, "LEAD signature_type: %x\n", ntohs(rpm->lead.signature_type));
+			fprintf(stderr, "bar: LEAD osnum: %x\n", ntohs(rpm->lead.osnum));
+		fprintf(stderr, "bar: LEAD signature_type: %x\n", ntohs(rpm->lead.signature_type));
 	}
 
 	return 0;
@@ -536,10 +536,10 @@ static int rpm_lead_read(int fd, struct rpm *rpm)
 
 static int rpm_lead_write(int fd, struct rpm *rpm)
 {
-	if(conf.verbose > 1) fprintf(stderr, "Writing lead, %zd bytes\n", sizeof(struct rpmlead));
+	if(conf.verbose > 1) fprintf(stderr, "bar: Writing lead, %zd bytes\n", sizeof(struct rpmlead));
 	rpm->lead.magic = htonl(RPMMAGIC);
 	if(write(fd, &rpm->lead, sizeof(struct rpmlead))!= sizeof(struct rpmlead)) {
-		fprintf(stderr, "Failed to write lead.\n");
+		fprintf(stderr, "bar: Failed to write lead.\n");
                 return -1;		
 	}
 	return 0;
@@ -558,7 +558,7 @@ static int rpm_payload_write(int fd, struct rpm *rpm, struct jlhead *files)
 	jl_foreach(files, f) {
 		if(conf.verbose) printf("%s\n", f->normalized_name);
 		if((n=cpio_write(file, f, rpm)) == -1) {
-			fprintf(stderr, "Error writing cpio header\n");
+			fprintf(stderr, "bar: Error writing cpio header\n");
 			return -1;
 		}
 		rpm->uncompressed_size += n;
@@ -567,7 +567,7 @@ static int rpm_payload_write(int fd, struct rpm *rpm, struct jlhead *files)
 	trailer.name = "TRAILER!!!";
 	trailer.normalized_name = "TRAILER!!!";
 	if((n=cpio_write(file, &trailer, rpm)) == -1) {
-		fprintf(stderr, "Error writing cpio header for trailer\n");
+		fprintf(stderr, "bar: Error writing cpio header for trailer\n");
 		return -1;
 	}
 	rpm->uncompressed_size += n;
@@ -656,7 +656,7 @@ static int rpm_hdr_write(int fd, struct rpm *rpm, struct header *hdr, struct jlh
 			len = (strlen(tag->value)+1)/2;
 			indexp->count = htonl(len);
 			if(conf.verbose > 2)
-				fprintf(stderr, "Writing binary of size %d bytes\n", ntohl(indexp->count));
+				fprintf(stderr, "bar: Writing binary of size %d bytes\n", ntohl(indexp->count));
 			while(((storep-store)+len+8) > store_len) {
 				off_t poffset;
 				poffset = storep-store;
@@ -665,7 +665,7 @@ static int rpm_hdr_write(int fd, struct rpm *rpm, struct header *hdr, struct jlh
 				storep = store + poffset;
 			}
 			if(hextobin(storep, (uint8_t*) tag->value, len)) {
-				fprintf(stderr, "Failed to convert hex to binary.\n");
+				fprintf(stderr, "bar: Failed to convert hex to binary.\n");
 				return -1;
 			}
 			storep += len;
@@ -681,7 +681,7 @@ static int rpm_hdr_write(int fd, struct rpm *rpm, struct header *hdr, struct jlh
 			}
 			
 			if(conf.verbose > 2)
-				fprintf(stderr, "Writing 32bit value to alignment: %d\n", ((storep-store)) % 4);
+				fprintf(stderr, "bar: Writing 32bit value to alignment: %d\n", ((storep-store)) % 4);
 			
 			{
 				char *p;
@@ -689,7 +689,7 @@ static int rpm_hdr_write(int fd, struct rpm *rpm, struct header *hdr, struct jlh
 				for(i=0;i<tag->count;i++) {
 					int32_t value;
 					if(!p) {
-						fprintf(stderr, "Error writing INT32 array. count=%d\n", tag->count);
+						fprintf(stderr, "bar: Error writing INT32 array. count=%d\n", tag->count);
 						return -1;
 					}
 					value = strtol(p, (void*)0, 10);
@@ -711,7 +711,7 @@ static int rpm_hdr_write(int fd, struct rpm *rpm, struct header *hdr, struct jlh
 			}
 			
 			if(conf.verbose > 2)
-				fprintf(stderr, "Writing 16bit value to alignment: %d\n", ((storep-store)) % 2);
+				fprintf(stderr, "bar: Writing 16bit value to alignment: %d\n", ((storep-store)) % 2);
 			
 			{
 				char *p;
@@ -719,7 +719,7 @@ static int rpm_hdr_write(int fd, struct rpm *rpm, struct header *hdr, struct jlh
 				for(i=0;i<tag->count;i++) {
 					int16_t value;
 					if(!p) {
-						fprintf(stderr, "Error writing INT16 array. count=%d\n", tag->count);
+						fprintf(stderr, "bar: Error writing INT16 array. count=%d\n", tag->count);
 						return -1;
 					}
 					value = strtol(p, (void*)0, 10);
@@ -732,26 +732,26 @@ static int rpm_hdr_write(int fd, struct rpm *rpm, struct header *hdr, struct jlh
 			indexp++;
 			break;
 		default:
-			fprintf(stderr, "Unsupported tag type: %d\n", tag->type);
+			fprintf(stderr, "bar: Unsupported tag type: %d\n", tag->type);
 			return -1;
 			break;
 		}
 		if(conf.verbose > 2)
-			fprintf(stderr, "Current store size: %d bytes\n", storep-store);
+			fprintf(stderr, "bar: Current store size: %d bytes\n", storep-store);
 	}
 
 	/* set size of store */
 	hdr->size = htonl(storep-store);
 
 	if(conf.verbose > 2)
-		fprintf(stderr, "Writing index header sized: %d bytes\n", sizeof(struct header));
+		fprintf(stderr, "bar: Writing index header sized: %d bytes\n", sizeof(struct header));
 	if(write(fd, hdr, sizeof(struct header))!= sizeof(struct header)) {
-		fprintf(stderr, "Failed to write signature header\n");
+		fprintf(stderr, "bar: Failed to write signature header\n");
                 return -1;
 	}
 
 	if(conf.verbose > 2)
-		fprintf(stderr, "Writing index sized: %d bytes\n", tags->len * sizeof(struct indexentry));
+		fprintf(stderr, "bar: Writing index sized: %d bytes\n", tags->len * sizeof(struct indexentry));
 	write(fd, index, tags->len * sizeof(struct indexentry));
 	
 	/* align */
@@ -771,9 +771,9 @@ static int rpm_hdr_write(int fd, struct rpm *rpm, struct header *hdr, struct jlh
 
 	/* write store */
 	if(conf.verbose > 2)
-		fprintf(stderr, "Writing store sized: %d bytes\n", i);
+		fprintf(stderr, "bar: Writing store sized: %d bytes\n", i);
 	if(write(fd, store, i)!=i) {
-		fprintf(stderr, "Failed to write signature store\n");
+		fprintf(stderr, "bar: Failed to write signature store\n");
 		return -1;
 	}
 
@@ -786,9 +786,9 @@ static int rpm_sig_write(int fd, struct rpm *rpm)
 	rc = rpm_hdr_write(fd, rpm, &rpm->sig, rpm->sigtags, 1);
 	rpm->headeroffset = lseek(fd, 0, SEEK_CUR);
 	if(conf.verbose > 2) {
-		fprintf(stderr, "SIGTAG: md5sum value at file offset: %ju\n", rpm->sigtag_md5sum);
-		fprintf(stderr, "SIGTAG: size value at file offset: %ju\n", rpm->sigtag_size);
-		fprintf(stderr, "SIGTAG: payloadsize value at file offset: %ju\n", rpm->sigtag_payloadsize);
+		fprintf(stderr, "bar: SIGTAG: md5sum value at file offset: %ju\n", rpm->sigtag_md5sum);
+		fprintf(stderr, "bar: SIGTAG: size value at file offset: %ju\n", rpm->sigtag_size);
+		fprintf(stderr, "bar: SIGTAG: payloadsize value at file offset: %ju\n", rpm->sigtag_payloadsize);
 	}
 	return rc;
 }
@@ -799,7 +799,7 @@ static int rpm_header_write(int fd, struct rpm *rpm)
 	rc = rpm_hdr_write(fd, rpm, &rpm->header, rpm->tags, 0);
 	rpm->payloadoffset = lseek(fd, 0, SEEK_CUR);
 	if(conf.verbose > 2) {
-		fprintf(stderr, "RPMTAG: sumsize value at file offset: %ju\n", rpm->rpmtag_size);
+		fprintf(stderr, "bar: RPMTAG: sumsize value at file offset: %ju\n", rpm->rpmtag_size);
 	}
 	return rc;
 }
@@ -811,29 +811,29 @@ static int rpm_sig_read(int fd, struct rpm *rpm)
 	struct indexentry *entry;
 	struct tag *tag;
 	struct jlhead *entries;
-	if(conf.verbose > 1) fprintf(stderr, "Reading signature sized %d bytes\n", sizeof(struct header));
+	if(conf.verbose > 1) fprintf(stderr, "bar: Reading signature sized %d bytes\n", sizeof(struct header));
 	entries = jl_new();
 	
 	if(read(fd, &rpm->sig, sizeof(struct header))!= sizeof(struct header)) {
-		fprintf(stderr, "Failed to read signature header\n");
+		fprintf(stderr, "bar: Failed to read signature header\n");
                 return -1;
 	}
 	if((ntohl(rpm->sig.magic) >> 8) !=HEADERMAGIC) {
-		fprintf(stderr, "Incorrect rpm-header magic in signature.\n");
+		fprintf(stderr, "bar: Incorrect rpm-header magic in signature.\n");
 		if(conf.verbose) {
-			fprintf(stderr, "Magic was: %x, should be %x\n",
+			fprintf(stderr, "bar: Magic was: %x, should be %x\n",
 				(ntohl(rpm->sig.magic) >> 8),
 				HEADERMAGIC);
 		}
                 return -1;
         }
 	
-	if(conf.verbose > 2) fprintf(stderr, "Reading index sized %d bytes\n",
+	if(conf.verbose > 2) fprintf(stderr, "bar: Reading index sized %d bytes\n",
 				     sizeof(struct indexentry)*ntohl(rpm->sig.entries));
 	for(i=0;i<ntohl(rpm->sig.entries);i++) {
 		entry = malloc(sizeof(struct indexentry));
 		if(read(fd, entry, sizeof(struct indexentry)) != sizeof(struct indexentry)) {
-			fprintf(stderr, "Failed to read indexentry %d.\n", i);
+			fprintf(stderr, "bar: Failed to read indexentry %d.\n", i);
 			return -1;
 		}
 		jl_append(entries, entry);
@@ -842,10 +842,10 @@ static int rpm_sig_read(int fd, struct rpm *rpm)
 	store = malloc(ntohl(rpm->sig.size));
 	
 	i = (ntohl(rpm->sig.size)+7)&~0x7; /* adjust to even 8-byte boundary */
-	if(conf.verbose > 1) fprintf(stderr, "Aligned %d to %d\n", ntohl(rpm->sig.size), i);
-	if(conf.verbose > 1) fprintf(stderr, "Reading store sized %d bytes\n", i);
+	if(conf.verbose > 1) fprintf(stderr, "bar: Aligned %d to %d\n", ntohl(rpm->sig.size), i);
+	if(conf.verbose > 1) fprintf(stderr, "bar: Reading store sized %d bytes\n", i);
 	if(read(fd, store, i)!=i) {
-		fprintf(stderr, "Failed to read signature store\n");
+		fprintf(stderr, "bar: Failed to read signature store\n");
 		return -1;
 	}
 
@@ -859,7 +859,7 @@ static int rpm_sig_read(int fd, struct rpm *rpm)
 		char buf[2048];
 
 		if(conf.verbose > 3)
-			fprintf(stderr, "Entry: %d [%s] type: %s offset: %d count: %d\n",
+			fprintf(stderr, "bar: Entry: %d [%s] type: %s offset: %d count: %d\n",
 				ntohl(entry->tag), sigstr(ntohl(entry->tag)),
 				hdrtypestr(ntohl(entry->type)), ntohl(entry->offset), ntohl(entry->count));
 
@@ -868,7 +868,7 @@ static int rpm_sig_read(int fd, struct rpm *rpm)
 		tag->tag = ntohl(entry->tag);
 		tag->type = ntohl(entry->type);
 		if(ntohl(entry->count) >= ((sizeof(buf)-2)/2)) {
-			fprintf(stderr, "Entry too large: %d. max %d allowed\n", ntohl(entry->count),
+			fprintf(stderr, "bar: Entry too large: %d. max %d allowed\n", ntohl(entry->count),
 				(sizeof(buf)-2)/2);
 			entry->count = htonl((sizeof(buf)-2)/2);
 		}
@@ -921,7 +921,7 @@ static int rpm_sig_read(int fd, struct rpm *rpm)
 	
 	if(conf.verbose > 2) 
 		jl_foreach(rpm->sigtags, tag) {
-			fprintf(stderr, "Sigtag: %d [%s] type: %s value: %s\n", tag->tag, sigstr(tag->tag), hdrtypestr(tag->type), tag->value);
+			fprintf(stderr, "bar: Sigtag: %d [%s] type: %s value: %s\n", tag->tag, sigstr(tag->tag), hdrtypestr(tag->type), tag->value);
 		}
 	
 	return 0;
@@ -934,29 +934,29 @@ static int rpm_header_read(int fd, struct rpm *rpm)
 	struct indexentry *entry;
 	struct tag *tag;
 	struct jlhead *entries;
-	if(conf.verbose > 1) fprintf(stderr, "Reading header sized %d\n", sizeof(struct header));
+	if(conf.verbose > 1) fprintf(stderr, "bar: Reading header sized %d\n", sizeof(struct header));
 	entries = jl_new();
 	
 	if(read(fd, &rpm->header, sizeof(struct header))!= sizeof(struct header)) {
-		fprintf(stderr, "Failed to read rpm header\n");
+		fprintf(stderr, "bar: Failed to read rpm header\n");
                 return -1;
 	}
 	if((ntohl(rpm->header.magic) >> 8) != HEADERMAGIC) {
-		fprintf(stderr, "Incorrect rpm-header magic in rpm header.\n");
+		fprintf(stderr, "bar: Incorrect rpm-header magic in rpm header.\n");
 		if(conf.verbose) {
-			fprintf(stderr, "Magic was: %x, should be %x\n",
+			fprintf(stderr, "bar: Magic was: %x, should be %x\n",
 				(ntohl(rpm->sig.magic) >> 8),
 				HEADERMAGIC);
 		}
                 return -1;
         }
 	
-	if(conf.verbose > 2) fprintf(stderr, "Reading index sized %d\n",
+	if(conf.verbose > 2) fprintf(stderr, "bar: Reading index sized %d\n",
 				     sizeof(struct indexentry)*ntohl(rpm->header.entries));
 	for(i=0;i<ntohl(rpm->header.entries);i++) {
 		entry = malloc(sizeof(struct indexentry));
 		if(read(fd, entry, sizeof(struct indexentry)) != sizeof(struct indexentry)) {
-			fprintf(stderr, "Failed to read indexentries.\n");
+			fprintf(stderr, "bar: Failed to read indexentries.\n");
 			return -1;
 		}
 		jl_append(entries, entry);
@@ -965,9 +965,9 @@ static int rpm_header_read(int fd, struct rpm *rpm)
 	store = malloc(ntohl(rpm->header.size));
 	
 	i = ntohl(rpm->header.size);
-	if(conf.verbose > 1) fprintf(stderr, "Reading store sized %d\n", i);
+	if(conf.verbose > 1) fprintf(stderr, "bar: Reading store sized %d\n", i);
 	if(read(fd, store, i)!=i) {
-		fprintf(stderr, "Failed to read header store\n");
+		fprintf(stderr, "bar: Failed to read header store\n");
 		return -1;
 	}
 
@@ -981,7 +981,7 @@ static int rpm_header_read(int fd, struct rpm *rpm)
 		char buf[2048];
 		
 		if(conf.verbose > 3)
-			fprintf(stderr, "Entry: %d [%s] type: %s offset: %d count: %d\n",
+			fprintf(stderr, "bar: Entry: %d [%s] type: %s offset: %d count: %d\n",
 				ntohl(entry->tag), tagstr(ntohl(entry->tag)),
 				hdrtypestr(ntohl(entry->type)), ntohl(entry->offset), ntohl(entry->count));
 		
@@ -990,7 +990,7 @@ static int rpm_header_read(int fd, struct rpm *rpm)
 		tag->tag = ntohl(entry->tag);
 		tag->type = ntohl(entry->type);
 		if(ntohl(entry->count) >= ((sizeof(buf)-2)/2)) {
-			fprintf(stderr, "Entry too large: %d. max %d allowed\n", ntohl(entry->count),
+			fprintf(stderr, "bar: Entry too large: %d. max %d allowed\n", ntohl(entry->count),
 				(sizeof(buf)-2)/2);
 			entry->count = htonl((sizeof(buf)-2)/2);
 		}
@@ -1063,7 +1063,7 @@ static int rpm_header_read(int fd, struct rpm *rpm)
 			p = store + ntohl(entry->offset);
 			for(i=0;i<ntohl(entry->count);i++) {
 				n = sprintf(b, "%hu", ntohs(*(int16_t*)p));
-				if(conf.verbose > 3) fprintf(stderr, "read 16bit value: %s\n", b);
+				if(conf.verbose > 3) fprintf(stderr, "bar: read 16bit value: %s\n", b);
 				b += n;
 				if(i < ntohl(entry->count)-1) {
                                         sprintf(b, "\n");
@@ -1075,14 +1075,14 @@ static int rpm_header_read(int fd, struct rpm *rpm)
 		if(tag->value) jl_append(rpm->tags, tag);
 		else {
 			if(conf.verbose) {
-				fprintf(stderr, "Skipping tag %d of unknown type: %d\n", tag->tag, ntohl(entry->type));
+				fprintf(stderr, "bar: Skipping tag %d of unknown type: %d\n", tag->tag, ntohl(entry->type));
 			}
 		}
 	}
 	
 	if(conf.verbose > 2) 
 		jl_foreach(rpm->tags, tag) {
-			fprintf(stderr, "Tag: %d [%s] type: %s value: %s\n", tag->tag, tagstr(tag->tag), hdrtypestr(tag->type), tag->value);
+			fprintf(stderr, "bar: Tag: %d [%s] type: %s value: %s\n", tag->tag, tagstr(tag->tag), hdrtypestr(tag->type), tag->value);
 		}
 	
 	return 0;
@@ -1093,24 +1093,24 @@ static int rpm_sig_rewrite(int fd, struct rpm *rpm)
 	uint32_t val;
 	
 	if(lseek(fd, rpm->sigtag_size, SEEK_SET)==-1) {
-		fprintf(stderr, "Failed to seek to pos %ju\n", rpm->sigtag_size);
+		fprintf(stderr, "bar: Failed to seek to pos %ju\n", rpm->sigtag_size);
 		return -1;
 	}
 	if(conf.verbose > 1)
-		fprintf(stderr, "Rewriting SIGTAG_SIZE to %ju - %ju = %ju\n",
+		fprintf(stderr, "bar: Rewriting SIGTAG_SIZE to %ju - %ju = %ju\n",
 			rpm->eofoffset, rpm->headeroffset, rpm->eofoffset - rpm->headeroffset);
 	val = htonl(rpm->eofoffset - rpm->headeroffset);
 	write(fd, &val, 4);
 
 	if(lseek(fd, rpm->sigtag_payloadsize, SEEK_SET)==-1) {
-		fprintf(stderr, "Failed to seek to pos %ju\n", rpm->sigtag_payloadsize);
+		fprintf(stderr, "bar: Failed to seek to pos %ju\n", rpm->sigtag_payloadsize);
 		return -1;
 	}
 	val = htonl(rpm->uncompressed_size);
 	write(fd, &val, 4);
 
 	if(lseek(fd, rpm->rpmtag_size, SEEK_SET)==-1) {
-		fprintf(stderr, "Failed to seek to pos %ju\n", rpm->rpmtag_size);
+		fprintf(stderr, "bar: Failed to seek to pos %ju\n", rpm->rpmtag_size);
 		return -1;
 	}
 	val = htonl(rpm->sumsize);
@@ -1120,7 +1120,7 @@ static int rpm_sig_rewrite(int fd, struct rpm *rpm)
 	 *  This tag specifies the 128-bit MD5 checksum of the combined Header and Archive sections.
 	 */
 	if(lseek(fd, rpm->headeroffset, SEEK_SET)==-1) {
-                fprintf(stderr, "Failed to seek to pos %ju\n", rpm->headeroffset);
+                fprintf(stderr, "bar: Failed to seek to pos %ju\n", rpm->headeroffset);
                 return -1;
         }
 	{
@@ -1130,7 +1130,7 @@ static int rpm_sig_rewrite(int fd, struct rpm *rpm)
 		unsigned char md5sum[MD5_DIGEST_LENGTH];
 
 		if(MD5Init(&md5)) {
-                        fprintf(stderr, "MD5Init failed.\n");
+                        fprintf(stderr, "bar: MD5Init failed.\n");
                         return -1;
                 }
 		while(1) {
@@ -1141,11 +1141,11 @@ static int rpm_sig_rewrite(int fd, struct rpm *rpm)
                 MD5Final(md5sum, &md5);
 
 		if(lseek(fd, rpm->sigtag_md5sum, SEEK_SET)==-1) {
-			fprintf(stderr, "Failed to seek to pos %ju\n", rpm->sigtag_md5sum);
+			fprintf(stderr, "bar: Failed to seek to pos %ju\n", rpm->sigtag_md5sum);
 			return -1;
 		}
 		if(conf.verbose > 1) {
-			fprintf(stderr, "Rewriting SIGTAG_MD5\n");
+			fprintf(stderr, "bar: Rewriting SIGTAG_MD5\n");
 		}
 		write(fd, md5sum, MD5_DIGEST_LENGTH);
 	}
@@ -1476,7 +1476,7 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 		char sigmd5sum[MD5_DIGEST_LENGTH*2+1];
 
 		if(MD5Init(&md5)) {
-                        fprintf(stderr, "MD5Init failed.\n");
+                        fprintf(stderr, "bar: MD5Init failed.\n");
                         return -1;
                 }
 		while(1) {
@@ -1489,16 +1489,16 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 			sprintf(sigmd5sum+i*2, "%02x", md5sum[i]);
 		}
 		if(strcmp(sig(rpm, SIGTAG_MD5), sigmd5sum)) {
-			fprintf(stderr, "MD5sum verification failed: %s %s\n", sig(rpm, SIGTAG_MD5), sigmd5sum); 
+			fprintf(stderr, "bar: MD5sum verification failed: %s %s\n", sig(rpm, SIGTAG_MD5), sigmd5sum); 
 		} else {
 			if(conf.verbose > 2)
-				fprintf(stderr, "MD5sum verification succeeded.\n");
+				fprintf(stderr, "bar: MD5sum verification succeeded.\n");
 		}
 		
 	}
 	
 	if(lseek(fd, rpm->headeroffset, SEEK_SET)==-1) {
-		fprintf(stderr, "Failed to seek to pos %ju\n", rpm->headeroffset);
+		fprintf(stderr, "bar: Failed to seek to pos %ju\n", rpm->headeroffset);
 	}
 	
 	if(rpm_header_read(fd, rpm)) return -1;
@@ -1515,11 +1515,11 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 	}
 
 	if(strcmp(tag(rpm, RPMTAG_PAYLOADFORMAT), "cpio")) {
-		fprintf(stderr, "Unsupported payload format '%s'\n", tag(rpm, RPMTAG_PAYLOADFORMAT));
+		fprintf(stderr, "bar: Unsupported payload format '%s'\n", tag(rpm, RPMTAG_PAYLOADFORMAT));
 		return -1;
 	}
 	if(strcmp(tag(rpm, RPMTAG_PAYLOADCOMPRESSOR), "gzip")) {
-		fprintf(stderr, "Unsupported payload compressor '%s'\n", tag(rpm, RPMTAG_PAYLOADCOMPRESSOR));
+		fprintf(stderr, "bar: Unsupported payload compressor '%s'\n", tag(rpm, RPMTAG_PAYLOADCOMPRESSOR));
 		return -1;
 	}
 
@@ -1536,7 +1536,7 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 		while(1) {
 			selected=0;
 			if(cpio_read(file, &cpio)) {
-				fprintf(stderr, "Error reading cpio header\n");
+				fprintf(stderr, "bar: Error reading cpio header\n");
 				return -1;
 			}
 			rpm->uncompressed_size += cpio.uncompressed_size;
@@ -1568,7 +1568,7 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 			}
 			if(selected && (!conf.list)) {
 				if(mkpath(cpio.name)) {
-					fprintf(stderr, "Failed to create filesystem path for %s\n", cpio.name);
+					fprintf(stderr, "bar: Failed to create filesystem path for %s\n", cpio.name);
 					return -1;
 				}
 				if(!strcmp(cpio.mode,"l")) {
@@ -1576,7 +1576,7 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 					path = malloc(cpio.c_filesize_a);
 					n = gzread(file, path, cpio.c_filesize_a);
 					if(n != cpio.c_filesize_a) {
-						fprintf(stderr, "Failed to read symlink for: %s\n", cpio.name);
+						fprintf(stderr, "bar: Failed to read symlink for: %s\n", cpio.name);
 						return -1;
 					}
 					rpm->uncompressed_size += n;
@@ -1602,12 +1602,12 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 					unlink(cpio.name);
 					ofd = open(cpio.name, O_WRONLY|O_CREAT|O_TRUNC, 0755);
 					if(ofd == -1) {
-						fprintf(stderr, "Failed to create file %s\n", cpio.name);
+						fprintf(stderr, "bar: Failed to create file %s\n", cpio.name);
 						if(tmpname) rename(tmpname, cpio.name);
 						return -1;
 					}
 					if(tmpname && unlink(tmpname)) {
-						fprintf(stderr, "Failed to unlink tmp file %s\n", tmpname);
+						fprintf(stderr, "bar: Failed to unlink tmp file %s\n", tmpname);
 					}
 					if(tmpname) free(tmpname);
 				}
@@ -1640,23 +1640,23 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 				if(!strcmp(cpio.mode,"d"))
 					if(ftest(cpio.name, S_IFDIR)) {
 						if(mkdir(cpio.name, 0755)) {
-							fprintf(stderr, "Failed to create directory %s\n",
+							fprintf(stderr, "bar: Failed to create directory %s\n",
 								cpio.name);
 							return -1;
 						}
 					}
 				if(chmod(cpio.name, cpio.c_mode & 07777)) {
-					fprintf(stderr, "Failed to set mode of %s\n", cpio.name);
+					fprintf(stderr, "bar: Failed to set mode of %s\n", cpio.name);
 					*err=1;
 				}
 				if(chown(cpio.name, cpio.c_uid, cpio.c_gid)) {
-					fprintf(stderr, "Failed to set owner of %s\n", cpio.name);
+					fprintf(stderr, "bar: Failed to set owner of %s\n", cpio.name);
 					*err=1;
 				}
 			}
 			if(conf.verbose > 1) {
 				if(cpio.c_filesize_a) {
-					fprintf(stderr, "Reading %llu bytes of file contents for %s\n",
+					fprintf(stderr, "bar: Reading %llu bytes of file contents for %s\n",
 						cpio.c_filesize_a, cpio.name);
 				}
 			}
@@ -1677,7 +1677,7 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 				tv[1].tv_sec = cpio.c_mtime;
 				tv[1].tv_usec = 0;
 				if(futimes(ofd, tv)) {
-					fprintf(stderr, "Failed to set mtime of %s\n", cpio.name);
+					fprintf(stderr, "bar: Failed to set mtime of %s\n", cpio.name);
                                         *err=1;
 				}
 				close(ofd);
@@ -1688,7 +1688,7 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 	}
 
 	if(conf.verbose > 1) {
-		fprintf(stderr, "Uncompressed size of payload: %zu\n", rpm->uncompressed_size);
+		fprintf(stderr, "bar: Uncompressed size of payload: %zu\n", rpm->uncompressed_size);
 	}
 	
 	return 0;
@@ -1769,7 +1769,7 @@ static int file_new(struct jlhead *files, const char *fn, int create, int recurs
 	if(S_ISLNK(f->stat.st_mode)) {
 		n = readlink(f->name, (char*)buf, sizeof(buf)-1);
 		if(n == -1) {
-			fprintf(stderr, "Failed to read link %s\n", f->name);
+			fprintf(stderr, "bar: Failed to read link %s\n", f->name);
 			return -1;
 		}
 		buf[n] = 0;
@@ -1781,7 +1781,7 @@ static int file_new(struct jlhead *files, const char *fn, int create, int recurs
 		if(fd == -1) return -1;
 		
 		if(MD5Init(&md5)) {
-			fprintf(stderr, "MD5Init failed.\n");
+			fprintf(stderr, "bar: MD5Init failed.\n");
 			return -1;
 		}
 		while(1) {
@@ -1796,7 +1796,7 @@ static int file_new(struct jlhead *files, const char *fn, int create, int recurs
 		}
 	}
 	if(conf.verbose > 2) {
-		fprintf(stderr, "Added file: %s md5sum: %s\n", f->name, f->md5);
+		fprintf(stderr, "bar: Added file: %s md5sum: %s\n", f->name, f->md5);
 	}
 
 	if(recursive && S_ISDIR(f->stat.st_mode)) {
@@ -1806,7 +1806,7 @@ static int file_new(struct jlhead *files, const char *fn, int create, int recurs
 		jl_append(files, f);
 		
 		if(!(dir = opendir(fn))) {
-			fprintf(stderr, "Failed to open dir %s\n", fn);
+			fprintf(stderr, "bar: Failed to open dir %s\n", fn);
 			return -1;
 		}
 		while((ent = readdir(dir))) {
@@ -1814,13 +1814,13 @@ static int file_new(struct jlhead *files, const char *fn, int create, int recurs
 			if(!strcmp(ent->d_name, "..")) continue;
 			
 			if(strlen(fn)+strlen(ent->d_name) > (sizeof(buf)-1)) {
-				fprintf(stderr, "File path to long.\n");
+				fprintf(stderr, "bar: File path to long.\n");
 				return -1;
 			}
 			
 			snprintf((char*)buf, sizeof(buf), "%s/%s", fn, ent->d_name);
 			if(file_new(files, (char*)buf, create, recursive)) {
-				fprintf(stderr, "Failed to add file %s\n", buf);
+				fprintf(stderr, "bar: Failed to add file %s\n", buf);
 				return -1;
 			}
 		}
@@ -1925,26 +1925,26 @@ int main(int argc, char **argv)
 	while(jelopt(argv, 0, "prefix", &conf.prefix, &err));
 	argc = jelopt_final(argv, &err);
 	if(err) {
-		fprintf(stderr, "Syntax error in options.\n");
+		fprintf(stderr, "bar: Syntax error in options.\n");
 		exit(2);
 	}
 	if(conf.create+conf.extract+conf.verify > 1) {
-		fprintf(stderr, "You must specify exactly one of [cxV]\n");
+		fprintf(stderr, "bar: You must specify exactly one of [cxV]\n");
 		exit(2);
 	}
 	if(conf.create+conf.extract+conf.verify == 0) {
-		fprintf(stderr, "You must specify one of [cxV]\n");
+		fprintf(stderr, "bar: You must specify one of [cxV]\n");
 		exit(2);
 	}
 	if(argc < 2) {
-		fprintf(stderr, "You must specify archive-file.\n");
+		fprintf(stderr, "bar: You must specify archive-file.\n");
 	}
 	rc=2;
 	
 	archive = strdup(argv[1]);
 	if(!conf.create) {
 		if(ftest(archive, S_IFREG)) {
-			fprintf(stderr, "'%s' is not a regular file.\n", archive);
+			fprintf(stderr, "bar: '%s' is not a regular file.\n", archive);
 			exit(2);
 		}
 	}
@@ -1959,7 +1959,7 @@ int main(int argc, char **argv)
 
 	for(i=2;i<argc;i++) {
 		if(file_new(files, argv[i], conf.create, conf.recursive)) {
-			fprintf(stderr, "Failed to add file %s. Aborting.\n", argv[i]);
+			fprintf(stderr, "bar: Failed to add file %s. Aborting.\n", argv[i]);
 			exit(1);
 		}
 	}
@@ -1967,7 +1967,7 @@ int main(int argc, char **argv)
 	if(conf.extract) {
 		err=0;
 		if(bar_extract(archive, files, &err)) {
-			fprintf(stderr, "'%s' extract failed\n", archive);
+			fprintf(stderr, "bar: '%s' extract failed\n", archive);
 			exit(1);
 		}
 		exit(err);
@@ -1976,7 +1976,7 @@ int main(int argc, char **argv)
 	if(conf.create) {
 		err=0;
 		if(bar_create(archive, files, &err)) {
-			fprintf(stderr, "'%s' create failed\n", archive);
+			fprintf(stderr, "bar: '%s' create failed\n", archive);
 			exit(1);
 		}
 		exit(err);
