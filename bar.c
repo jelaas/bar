@@ -63,7 +63,8 @@ struct tag {
 
 struct file {
 	char *name; /* name to use for file access when creating archive */
-	char *normalized_name; /* name to write in archive */
+	char *normalized_name; /* name to write in header */
+	char *cpio_name; /* name to write in cpio-archive */
 	struct stat stat;
 	char *md5;
 	char *user, *group;
@@ -352,7 +353,7 @@ static ssize_t cpio_write(gzFile file, const struct file *f, struct rpm *rpm)
 	sprintf(buf, "%08X", statb.st_gid);
 	memcpy(header.c_gid, buf, 8);
 	
-	sprintf(buf, "%08X", strlen(f->normalized_name));
+	sprintf(buf, "%08X", strlen(f->cpio_name));
 	memcpy(header.c_namesize, buf, 8);
 
 	if(S_ISREG(statb.st_mode)) {
@@ -366,9 +367,9 @@ static ssize_t cpio_write(gzFile file, const struct file *f, struct rpm *rpm)
 	
 	if(conf.verbose > 1)
 		fprintf(stderr, "bar: Aligned [4] %d to %d\n",
-			sizeof(header)+strlen(f->normalized_name),
-			(sizeof(header)+strlen(f->normalized_name)+3)&~3);
-	n = gzwrite(file, f->normalized_name, ((sizeof(header)+strlen(f->normalized_name)+3)&~3) - sizeof(header));
+			sizeof(header)+strlen(f->cpio_name),
+			(sizeof(header)+strlen(f->cpio_name)+3)&~3);
+	n = gzwrite(file, f->cpio_name, ((sizeof(header)+strlen(f->cpio_name)+3)&~3) - sizeof(header));
 	if(n <= 0) return -1;
 	uncompressed_size += n;
 	
@@ -470,6 +471,8 @@ static int cpio_read(gzFile file, struct cpio_host *cpio)
 		fprintf(stderr, "bar: Error reading name from cpio.\n");
 		return -1;
 	}
+	if(conf.verbose > 3) fprintf(stderr, "bar: raw cpioname: [%s]\n",
+				     cpio->name+2);
 	if(strcmp(cpio->name+2, "TRAILER!!!")==0)
 		trailer=1;
 	if(cpio->name[2] == '/') {
@@ -566,6 +569,7 @@ static int rpm_payload_write(int fd, struct rpm *rpm, struct jlhead *files)
 	memset(&trailer, 0, sizeof(trailer));
 	trailer.name = "TRAILER!!!";
 	trailer.normalized_name = "TRAILER!!!";
+	trailer.cpio_name = "TRAILER!!!";
 	if((n=cpio_write(file, &trailer, rpm)) == -1) {
 		fprintf(stderr, "bar: Error writing cpio header for trailer\n");
 		return -1;
@@ -1708,7 +1712,7 @@ static int file_new(struct jlhead *files, const char *fn, int create, int recurs
 
 	f->name = strdup(fn);
 	
-	/* normalize name */
+	/* normalize name to always start with '/' */
 	if(*fn != '/') {
 		if(strncmp(fn, "./", 2)==0) {
 			f->normalized_name = strdup(fn+1);
@@ -1724,6 +1728,12 @@ static int file_new(struct jlhead *files, const char *fn, int create, int recurs
 		jl_append(files, f);
 		return 0;
 	}
+
+	/* Names in the cpio archive should start with "./" */
+	f->cpio_name = malloc(strlen(f->normalized_name)+2);
+	strcpy(f->cpio_name+1, f->normalized_name);
+	*f->cpio_name = '.';
+	
 	if(conf.prefix) {
 		char *p;
 		p = malloc(strlen(conf.prefix)+strlen(f->normalized_name)+1);
