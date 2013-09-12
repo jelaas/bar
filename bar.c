@@ -1725,7 +1725,7 @@ static int file_new(struct jlhead *files, const char *fn, int create, int recurs
 	}
 	if(!create) {
 		/* we are done. no need to fetch additional file info when not creating an archive */
-		jl_append(files, f);
+		jl_ins(files, f);
 		return 0;
 	}
 
@@ -1813,7 +1813,7 @@ static int file_new(struct jlhead *files, const char *fn, int create, int recurs
 		DIR *dir;
 		struct dirent *ent;
 		
-		jl_append(files, f);
+		jl_ins(files, f);
 		
 		if(!(dir = opendir(fn))) {
 			fprintf(stderr, "bar: Failed to open dir %s\n", fn);
@@ -1837,8 +1837,13 @@ static int file_new(struct jlhead *files, const char *fn, int create, int recurs
 		return 0;
 	}
 
-	jl_append(files, f);
+	jl_ins(files, f);
 	return 0;
+}
+
+int sort_files(const void *a, const void *b)
+{
+	return strcmp(((struct file*)a)->normalized_name, ((struct file*)b)->normalized_name);
 }
 
 int main(int argc, char **argv)
@@ -1848,6 +1853,7 @@ int main(int argc, char **argv)
 	struct jlhead *files;
 
 	files = jl_new();
+	jl_sort(files, sort_files);
 	
 	i=256;
 	conf.cwd = malloc(i);
