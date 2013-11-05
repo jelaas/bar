@@ -360,6 +360,10 @@ static ssize_t cpio_write(gzFile file, const struct file *f, struct rpm *rpm)
 		sprintf(buf, "%08X", (unsigned int) statb.st_size);
 		memcpy(header.c_filesize, buf, 8);
 	}
+	if(S_ISLNK(statb.st_mode)) {
+		sprintf(buf, "%08X", (unsigned int) statb.st_size+1);
+		memcpy(header.c_filesize, buf, 8);
+	}
 	
 	n = gzwrite(file, &header, sizeof(header));
 	if(n <= 0) return -1;
@@ -403,7 +407,31 @@ static ssize_t cpio_write(gzFile file, const struct file *f, struct rpm *rpm)
 	}
 	if(S_ISLNK(statb.st_mode)) {
 		/* write link, 4-byte aligned */
-		return -1;
+		if(conf.verbose > 1)
+			fprintf(stderr, "bar: Writing contents of link %s\n", f->name);
+		filesize = statb.st_size;
+		fbuf = malloc(filesize+16);
+		if(!fbuf) return -1;
+
+		count = readlink(f->name, fbuf, filesize+16);
+		if(count < 1) {
+			fprintf(stderr, "bar: Error reading link %s\n", f->name);
+			return -1;
+		}
+		((char*)fbuf)[count] = 0; /* zero terminate link string */
+		count++;
+		n = gzwrite(file, fbuf, count);
+		if(n <= 0) return -1;
+		uncompressed_size += n;
+		rpm->sumsize += n;
+		
+		n = ((count + 3) & ~3) - count;
+		if(n) {
+			memset(buf, 0, sizeof(buf));
+			n = gzwrite(file, buf, n);
+			if(n <= 0) return -1;
+			uncompressed_size += n;
+		}
 	}
 	
 	return uncompressed_size;
@@ -1664,7 +1692,9 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 						cpio.c_filesize_a, cpio.name);
 				}
 			}
-			while(cpio.c_filesize_a) {
+
+			/* Only read data if the entry is a file (and not a link) */
+			while( (strcmp(cpio.mode,"f") == 0) && cpio.c_filesize_a) {
 				n = gzread(file, buf, cpio.c_filesize_a < sizeof(buf) ? cpio.c_filesize_a : sizeof(buf));
 				if(n <= 0) break;
 				rpm->uncompressed_size += n;
