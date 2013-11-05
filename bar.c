@@ -1615,6 +1615,8 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 					unlink(cpio.name);
 					symlink(path, cpio.name);
 					free(path);
+					/* set size to zero, so it wont be read later */
+					cpio.c_filesize_a = 0;
 				}
 				if(!strcmp(cpio.mode,"f")) {
 					char *tmpname;
@@ -1693,8 +1695,7 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 				}
 			}
 
-			/* Only read data if the entry is a file (and not a link) */
-			while( (strcmp(cpio.mode,"f") == 0) && cpio.c_filesize_a) {
+			while( cpio.c_filesize_a) {
 				n = gzread(file, buf, cpio.c_filesize_a < sizeof(buf) ? cpio.c_filesize_a : sizeof(buf));
 				if(n <= 0) break;
 				rpm->uncompressed_size += n;
