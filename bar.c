@@ -22,6 +22,7 @@
 #include <pwd.h>
 #include <grp.h>
 #include <dirent.h>
+#include <limits.h>
 
 #include "md5.h"
 #include "bar_rpm.h"
@@ -145,7 +146,7 @@ static int mkpath(const char *path)
 {
 	const char *p;
 	const char *n;
-	char buf[256];
+	char buf[NAME_MAX+1];
 	
 	p = path;
 	if(chdir(conf.cwd)) return -1;
@@ -383,25 +384,40 @@ static ssize_t cpio_write(gzFile file, const struct file *f, struct rpm *rpm)
 			fprintf(stderr, "bar: Writing contents of file %s\n", f->name);
 		filesize = statb.st_size;
 		ifd = open(f->name, O_RDONLY);
-		if(ifd == -1) return -1;
+		if(ifd == -1) {
+			fprintf(stderr, "bar: Failed to open %s\n", f->name);
+			return -1;
+		}
 		fbuf = malloc(4096);
-		if(!fbuf) return -1;
+		if(!fbuf) {
+			fprintf(stderr, "bar: Failed to malloc fbuf memory %s\n", f->name);
+			return -1;
+		}
 		while(filesize) {
 			count = read(ifd, fbuf, sizeof(fbuf));
 			if(count < 1) {
+				fprintf(stderr, "bar: read failed. bytes left %zu. for %s\n", filesize, f->name);
 				return -1;
 			}
 			filesize -= count;
 			n = gzwrite(file, fbuf, count);
-			if(n <= 0) return -1;
+			if(n <= 0) {
+				fprintf(stderr, "bar: gzwrite failed. bytes left %zu. for %s\n", filesize, f->name);
+				return -1;
+			}
 			uncompressed_size += n;
 			rpm->sumsize += n;
 		}
+		close(ifd);
+		
 		n = ((statb.st_size + 3) & ~3) - statb.st_size;
 		if(n) {
 			memset(buf, 0, sizeof(buf));
 			n = gzwrite(file, buf, n);
-			if(n <= 0) return -1;
+			if(n <= 0) {
+				fprintf(stderr, "bar: gzwrite failed for padding. %s\n", f->name);
+				return -1;
+			}
 			uncompressed_size += n;
 		}
 	}
@@ -1734,12 +1750,16 @@ static int file_new(struct jlhead *files, const char *fn, int create, int recurs
 	struct file *f;
 	int fd, i;
 	ssize_t n;
-	unsigned char buf[1024];
+	unsigned char buf[PATH_MAX];
 	MD5_CTX md5;
 	unsigned char md5sum[MD5_DIGEST_LENGTH];
 	
 	f = malloc(sizeof(struct file));
-	if(!f) return -1;
+	if(!f) {
+		fprintf(stderr, "bar: failed to malloc memory: ");
+		fprintf(stderr, "%s\n", fn);
+		return -1;
+	}
 
 	f->name = strdup(fn);
 	
@@ -1756,8 +1776,15 @@ static int file_new(struct jlhead *files, const char *fn, int create, int recurs
 	}
 	if(!create) {
 		/* we are done. no need to fetch additional file info when not creating an archive */
-		jl_ins(files, f);
+		if(jl_ins(files, f)) {
+                        fprintf(stderr, "bar: list insert failed for %s\n", f->name);
+			return -1;
+                }
 		return 0;
+	}
+
+	if(conf.verbose > 2) {
+		fprintf(stderr, "bar: processing file %s\n", f->name);
 	}
 
 	/* Names in the cpio archive should start with "./" */
@@ -1773,12 +1800,23 @@ static int file_new(struct jlhead *files, const char *fn, int create, int recurs
 		f->normalized_name = p;
 	}
 
-	if(lstat(f->name, &f->stat))
+	if(lstat(f->name, &f->stat)) {
+		fprintf(stderr, "bar: Failed to lstat %s\n", f->name);
 		return -1;
+	}
 	
 	f->md5 = malloc(MD5_DIGEST_LENGTH*2+1);
+	if(!f->md5) {
+		fprintf(stderr, "bar: failed to malloc memory for md5 computation: ");
+		fprintf(stderr, "%s\n", f->name);
+		return -1;
+	}
 	strcpy(f->md5, ""); /* empty by default. only regular files */
 	
+	if(conf.verbose > 2) {
+		fprintf(stderr, "bar: assigning user and group ownership to %s\n", f->name);
+	}
+
 	if(conf.tag.fuser)
 		f->user = conf.tag.fuser;
 	else {
@@ -1808,6 +1846,9 @@ static int file_new(struct jlhead *files, const char *fn, int create, int recurs
 	f->link = "";
 
 	if(S_ISLNK(f->stat.st_mode)) {
+		if(conf.verbose > 2) {
+			fprintf(stderr, "bar: processing link file  %s\n", f->name);
+		}
 		n = readlink(f->name, (char*)buf, sizeof(buf)-1);
 		if(n == -1) {
 			fprintf(stderr, "bar: Failed to read link %s\n", f->name);
@@ -1818,11 +1859,19 @@ static int file_new(struct jlhead *files, const char *fn, int create, int recurs
 	}
 	
 	if(S_ISREG(f->stat.st_mode)) {
+		if(conf.verbose > 2) {
+			fprintf(stderr, "bar: processing regular file %s\n", f->name);
+		}
+
 		fd = open(f->name, O_RDONLY);
-		if(fd == -1) return -1;
+		if(fd == -1) {
+			fprintf(stderr, "bar: Failed to open file %s\n", f->name);
+			return -1;
+		}
 		
 		if(MD5Init(&md5)) {
 			fprintf(stderr, "bar: MD5Init failed.\n");
+			close(fd);
 			return -1;
 		}
 		while(1) {
@@ -1844,7 +1893,14 @@ static int file_new(struct jlhead *files, const char *fn, int create, int recurs
 		DIR *dir;
 		struct dirent *ent;
 		
-		jl_ins(files, f);
+		if(conf.verbose > 2) {
+			fprintf(stderr, "bar: recursive decent into directory %s\n", f->name);
+		}
+
+		if(jl_ins(files, f)) {
+			fprintf(stderr, "bar: list insert failed for %s\n", f->name);
+			return -1;
+		}
 		
 		if(!(dir = opendir(fn))) {
 			fprintf(stderr, "bar: Failed to open dir %s\n", fn);
@@ -1856,19 +1912,25 @@ static int file_new(struct jlhead *files, const char *fn, int create, int recurs
 			
 			if(strlen(fn)+strlen(ent->d_name) > (sizeof(buf)-1)) {
 				fprintf(stderr, "bar: File path to long.\n");
+				closedir(dir);
 				return -1;
 			}
 			
 			snprintf((char*)buf, sizeof(buf), "%s/%s", fn, ent->d_name);
 			if(file_new(files, (char*)buf, create, recursive)) {
 				fprintf(stderr, "bar: Failed to add file %s\n", buf);
+				closedir(dir);
 				return -1;
 			}
 		}
+		closedir(dir);
 		return 0;
 	}
 
-	jl_ins(files, f);
+	if(jl_ins(files, f)) {
+		fprintf(stderr, "bar: list insert failed for %s\n", f->name);
+		return -1;
+	}
 	return 0;
 }
 
