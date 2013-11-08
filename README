@@ -40,3 +40,16 @@ Recursive selection of files supported.
 TODO
 Verification of per file (checksum).
 Ability to specify values of some tags: summary, description, group.
+
+PERFORMANCE
+time bar -cr kernel-source.rpm /src/kernel-3.6.0/
+real 2m10.042s
+
+du -hs /src/kernel-3.6.0/
+535M   /src/kernel-3.6.0/
+find /src/kernel-3.6.0/|wc -l
+42211
+bar -l kernel-source.rpm |wc -l
+42211
+du -hs kernel-source.rpm 
+105M   kernel-source.rpm
