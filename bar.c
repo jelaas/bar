@@ -1787,11 +1787,6 @@ static int file_new(struct jlhead *files, const char *fn, int create, int recurs
 		fprintf(stderr, "bar: processing file %s\n", f->name);
 	}
 
-	/* Names in the cpio archive should start with "./" */
-	f->cpio_name = malloc(strlen(f->normalized_name)+2);
-	strcpy(f->cpio_name+1, f->normalized_name);
-	*f->cpio_name = '.';
-	
 	if(conf.prefix) {
 		char *p;
 		p = malloc(strlen(conf.prefix)+strlen(f->normalized_name)+1);
@@ -1799,7 +1794,12 @@ static int file_new(struct jlhead *files, const char *fn, int create, int recurs
 		strcat(p, f->normalized_name);
 		f->normalized_name = p;
 	}
-
+	
+	/* Names in the cpio archive should start with "./" */
+	f->cpio_name = malloc(strlen(f->normalized_name)+2);
+	strcpy(f->cpio_name+1, f->normalized_name);
+	*f->cpio_name = '.';
+	
 	if(lstat(f->name, &f->stat)) {
 		fprintf(stderr, "bar: Failed to lstat %s\n", f->name);
 		return -1;
