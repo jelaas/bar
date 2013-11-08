@@ -2057,7 +2057,13 @@ int main(int argc, char **argv)
 			exit(2);
 		}
 	}
-
+	if(conf.create) {
+		if(ftest(archive, 0777777) != -1) {
+			fprintf(stderr, "bar: Archive file '%s' already exists.\n", archive);
+			exit(2);
+		}
+	}
+	
 	if(!conf.tag.name) {
 		char *p;
 		conf.tag.name = strdup(archive);
