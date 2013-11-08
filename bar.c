@@ -152,6 +152,7 @@ static int mkpath(const char *path)
 	if(chdir(conf.cwd)) return -1;
 	
 	while(1) {
+		while(*p == '/') p++;
 		n = strchr(p, '/');
 		if(!n) break;
 		if( (n-p) >= sizeof(buf)) {
@@ -916,7 +917,7 @@ static int rpm_sig_read(int fd, struct rpm *rpm)
 		tag->tag = ntohl(entry->tag);
 		tag->type = ntohl(entry->type);
 		if(ntohl(entry->count) >= ((sizeof(buf)-2)/2)) {
-			fprintf(stderr, "bar: Entry too large: %d. max %d allowed\n", ntohl(entry->count),
+			fprintf(stderr, "bar: Signature entry too large: %d. max %d allowed\n", ntohl(entry->count),
 				(sizeof(buf)-2)/2);
 			entry->count = htonl((sizeof(buf)-2)/2);
 		}
@@ -982,9 +983,12 @@ static int rpm_header_read(int fd, struct rpm *rpm)
 	struct indexentry *entry;
 	struct tag *tag;
 	struct jlhead *entries;
+	char *buf;
+	size_t bufsize = 2048;
+
 	if(conf.verbose > 1) fprintf(stderr, "bar: Reading header sized %d\n", sizeof(struct header));
 	entries = jl_new();
-	
+
 	if(read(fd, &rpm->header, sizeof(struct header))!= sizeof(struct header)) {
 		fprintf(stderr, "bar: Failed to read rpm header\n");
                 return -1;
@@ -1025,9 +1029,13 @@ static int rpm_header_read(int fd, struct rpm *rpm)
 	 */
 	rpm->payloadoffset = lseek(fd, 0, SEEK_CUR);
 
+        buf = malloc(bufsize);
+	if(!buf) {
+		fprintf(stderr, "bar: Failed to allocate buffer for rpm header\n");
+		return -1;
+	}
+	
 	jl_foreach(entries, entry) {
-		char buf[2048];
-		
 		if(conf.verbose > 3)
 			fprintf(stderr, "bar: Entry: %d [%s] type: %s offset: %d count: %d\n",
 				ntohl(entry->tag), tagstr(ntohl(entry->tag)),
@@ -1037,10 +1045,23 @@ static int rpm_header_read(int fd, struct rpm *rpm)
 		memset(tag, 0, sizeof(struct tag));
 		tag->tag = ntohl(entry->tag);
 		tag->type = ntohl(entry->type);
-		if(ntohl(entry->count) >= ((sizeof(buf)-2)/2)) {
-			fprintf(stderr, "bar: Entry too large: %d. max %d allowed\n", ntohl(entry->count),
-				(sizeof(buf)-2)/2);
-			entry->count = htonl((sizeof(buf)-2)/2);
+
+		if(ntohl(entry->count) >= ((bufsize-2)/2)) {
+			char *newbuf;
+			if(ntohl(entry->count) < 1<<24) {
+				newbuf = malloc( (ntohl(entry->count)+2)*2);
+				if(newbuf) {
+					free(buf);
+					buf = newbuf;
+					bufsize = (ntohl(entry->count)+2)*2;
+				}
+			}
+		}
+
+		if(ntohl(entry->count) >= ((bufsize-2)/2)) {
+			fprintf(stderr, "bar: Header entry too large: %d. max %d allowed\n", ntohl(entry->count),
+				(bufsize-2)/2);
+			entry->count = htonl((bufsize-2)/2);
 		}
 
 		if(ntohl(entry->type) == HDRTYPE_BIN) {
@@ -1132,7 +1153,7 @@ static int rpm_header_read(int fd, struct rpm *rpm)
 		jl_foreach(rpm->tags, tag) {
 			fprintf(stderr, "bar: Tag: %d [%s] type: %s value: %s\n", tag->tag, tagstr(tag->tag), hdrtypestr(tag->type), tag->value);
 		}
-	
+	free(buf);
 	return 0;
 }
 
@@ -2031,7 +2052,13 @@ int main(int argc, char **argv)
 	while(jelopt(argv, 0, "os", &conf.tag.os, &err));
 	while(jelopt(argv, 0, "release", &conf.tag.release, &err));
 	while(jelopt(argv, 0, "version", &conf.tag.version, &err));
-	while(jelopt(argv, 0, "prefix", &conf.prefix, &err));
+	while(jelopt(argv, 0, "prefix", &conf.prefix, &err)) {
+		int len = strlen(conf.prefix);
+		if(len)
+			if(conf.prefix[len-1] == '/')
+				conf.prefix[len-1] = 0;
+	}
+	
 	argc = jelopt_final(argv, &err);
 	if(err) {
 		fprintf(stderr, "bar: Syntax error in options.\n");
