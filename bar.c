@@ -232,6 +232,8 @@ static const char *tagstr(int t)
 		return "RPMTAG_SUMMARY";
 	case RPMTAG_DESCRIPTION:
 		return "RPMTAG_DESCRIPTION";
+	case RPMTAG_BUILDTIME:
+		return "RPMTAG_BUILDTIME";
 	case RPMTAG_SIZE:
 		return "RPMTAG_SIZE";
 	case RPMTAG_COPYRIGHT:
@@ -1274,6 +1276,14 @@ static int bar_create(const char *archive, struct jlhead *files, int *err)
         tag->type = HDRTYPE_I18NSTRING;
 	jl_append(rpm->tags, tag);
 
+	{
+		char buf[32];
+		tag = tag_new(RPMTAG_BUILDTIME);
+		sprintf(buf, "%d", (int)time(0));
+		tag->value = strdup(buf);
+		tag->type = HDRTYPE_INT32;
+		jl_append(rpm->tags, tag);
+	}
 
 	/*
 	RPMTAG_SIZE INT32 This tag specifies the sum of the sizes of the regular files in the archive.
