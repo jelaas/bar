@@ -44,7 +44,7 @@
  */
 
 struct {
-	int recursive,create,extract,verbose,verify,list,info;
+	int recursive,create,extract,verbose,verify,list,info,pkginfo;
 	char *prefix;
 	char *cwd;
 	struct {
@@ -1639,9 +1639,13 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 					time_t t = cpio.c_mtime;
 					localtime_r(&t, &tm);
 					strftime(buf, sizeof(buf), "%F %T", &tm);
-					printf("%-8o %4d %6d %6d %9llu %9s %s\n",
-					       cpio.c_mode, cpio.c_nlink, cpio.c_uid, cpio.c_gid,
-					       cpio.c_filesize, buf, cpio.name);
+					if(conf.pkginfo)
+						printf("%s\t%llu\t%s\n",
+						       cpio.mode, cpio.c_filesize, cpio.name);
+					else
+						printf("%-8o %4d %6d %6d %9llu %9s %s\n",
+						       cpio.c_mode, cpio.c_nlink, cpio.c_uid, cpio.c_gid,
+						       cpio.c_filesize, buf, cpio.name);
 				} else
 					printf("%s\n", cpio.name);
 			}
@@ -2044,6 +2048,9 @@ int main(int argc, char **argv)
 		       "\n"
 		       " Create/extract options:\n"
 		       " --prefix <path>      add prefix <path> to all filepaths\n"
+		       "\n"
+		       " Package handler information:\n"
+		       " --pkginfo\n"
 			);
 		exit(rc);
 	}
@@ -2062,6 +2069,7 @@ int main(int argc, char **argv)
 	while(jelopt(argv, 0, "os", &conf.tag.os, &err));
 	while(jelopt(argv, 0, "release", &conf.tag.release, &err));
 	while(jelopt(argv, 0, "version", &conf.tag.version, &err));
+	while(jelopt(argv, 0, "pkginfo", NULL, &err)) conf.pkginfo=conf.verbose=1;
 	while(jelopt(argv, 0, "prefix", &conf.prefix, &err)) {
 		int len = strlen(conf.prefix);
 		if(len)
