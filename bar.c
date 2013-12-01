@@ -48,7 +48,7 @@ struct {
 	char *prefix;
 	char *cwd;
 	struct {
-		char *arch, *os, *license, *version, *release, *name;
+		char *arch, *buildtime, *os, *license, *version, *release, *name;
 		char *fuser, *fgroup;
 	} tag;
 } conf;
@@ -1276,14 +1276,11 @@ static int bar_create(const char *archive, struct jlhead *files, int *err)
         tag->type = HDRTYPE_I18NSTRING;
 	jl_append(rpm->tags, tag);
 
-	{
-		char buf[32];
-		tag = tag_new(RPMTAG_BUILDTIME);
-		sprintf(buf, "%d", (int)time(0));
-		tag->value = strdup(buf);
-		tag->type = HDRTYPE_INT32;
-		jl_append(rpm->tags, tag);
-	}
+	tag = tag_new(RPMTAG_BUILDTIME);
+	tag->value = conf.tag.buildtime;
+	tag->type = HDRTYPE_INT32;
+	jl_append(rpm->tags, tag);
+
 
 	/*
 	RPMTAG_SIZE INT32 This tag specifies the sum of the sizes of the regular files in the archive.
@@ -2024,6 +2021,11 @@ int main(int argc, char **argv)
 	}
 	conf.tag.fuser = (void*)0;
 	conf.tag.fgroup = (void*)0;
+	{
+		char buf[32];
+		sprintf(buf, "%d", (int)time(0));
+		conf.tag.buildtime = strdup(buf);
+	}
 
 	if(jelopt(argv, 'h', "help", 0, &err)) {
 	usage:
@@ -2037,17 +2039,18 @@ int main(int argc, char **argv)
 		       " v -- verbose\n"
 		       "\n"
 		       " Overriding default tag values:\n"
-		       " --arch <archname>    [from uname]\n"
-		       " --fgroup <groupname> [file owner]\n"
-		       " --fuser <username>   [file owner]\n"
-		       " --license <string>   [GPLv2+]\n"
-		       " --name <string>      [from archive-file name]\n"
-		       " --os <osname>        [from uname]\n"
-		       " --release <string>   [current date and time YYYYMMDD.HHMMSS]\n"
-		       " --version <string>   [0]\n"
+		       " --arch <archname>      [from uname]\n"
+		       " --buildtime <unixtime> [current time]\n"
+		       " --fgroup <groupname>   [file owner]\n"
+		       " --fuser <username>     [file owner]\n"
+		       " --license <string>     [GPLv2+]\n"
+		       " --name <string>        [from archive-file name]\n"
+		       " --os <osname>          [from uname]\n"
+		       " --release <string>     [current date and time YYYYMMDD.HHMMSS]\n"
+		       " --version <string>     [0]\n"
 		       "\n"
 		       " Create/extract options:\n"
-		       " --prefix <path>      add prefix <path> to all filepaths\n"
+		       " --prefix <path>        add prefix <path> to all filepaths\n"
 		       "\n"
 		       " Package handler information:\n"
 		       " --pkginfo\n"
@@ -2062,6 +2065,7 @@ int main(int argc, char **argv)
 	while(jelopt(argv, 'v', "verbose", 0, &err)) conf.verbose++;
 	while(jelopt(argv, 'V', "verify", 0, &err)) conf.verify=1;
 	while(jelopt(argv, 0, "arch", &conf.tag.arch, &err));
+	while(jelopt(argv, 0, "buildtime", &conf.tag.buildtime, &err));
 	while(jelopt(argv, 0, "fgroup", &conf.tag.fgroup, &err));
 	while(jelopt(argv, 0, "fuser", &conf.tag.fuser, &err));
 	while(jelopt(argv, 0, "license", &conf.tag.license, &err));
