@@ -2,7 +2,7 @@
  * File: bar.c
  * Implements: rpm file archive creator and extractor
  *
- * Copyright: Jens Låås, Uppsala University, 2013
+ * Copyright: Jens LÃ¥Ã¥s, Uppsala University, 2013
  * Copyright license: According to GPL, see file COPYING in this directory.
  *
  */
