@@ -45,6 +45,7 @@
 
 struct {
 	int recursive,create,extract,verbose,verify,list,info,pkginfo;
+	int ignore_chksum;
 	char *prefix;
 	char *cwd;
 	struct {
@@ -113,6 +114,53 @@ struct cpio_host {
 
 	size_t uncompressed_size;
 };
+
+
+/* normalize name to always start with '/'
+ */
+const char *normalize_name(const char *fn)
+{
+	if(*fn == '/') return fn;
+	if(strncmp(fn, "./", 2)==0) return fn+1;
+	return fn;
+}
+
+int strindex(const char *lines, const char *str)
+{
+	char *p=(char*)lines;
+	char *n;
+	int i=0;
+
+	while(p && *p) {
+		n = strchr(p, '\n');
+		if(n && !strncmp(p, str, n-p))
+			return i;
+		if(!n) {
+			if(!strcmp(p, str)) return i;
+			return -1;
+		}
+		i++;
+		p = n+1;
+	}
+	return -1;
+}
+
+char *stratindex(const char *lines, int idx)
+{
+	char *p=(char*)lines;
+	char *n;
+	while(p && *p) {
+		n = strchr(p, '\n');
+		if(idx == 0) {
+			if(n) return strndup(p, n-p);
+			return strdup(p);
+		}
+		p = n;
+		if(p) p++;
+		idx--;
+	}
+	return (void*)0;
+}
 
 static int hextobin(char *dst, const uint8_t *src, size_t len)
 {
@@ -260,6 +308,14 @@ static const char *tagstr(int t)
 		return "RPMTAG_FILEMODES";
 	case RPMTAG_FILERDEVS:
 		return "RPMTAG_FILERDEVS";
+	case RPMTAG_FILEMD5S:
+		return "RPMTAG_FILEMD5S";
+	case RPMTAG_DIRINDEXES:
+		return "RPMTAG_DIRINDEXES";
+	case RPMTAG_BASENAMES:
+		return "RPMTAG_BASENAMES";
+	case RPMTAG_DIRNAMES:
+		return "RPMTAG_DIRNAMES";
 	}
 	return "";
 }
@@ -289,7 +345,7 @@ static struct tag *tag_new(int n)
 	return tag;
 }
 
-static const char *tag(struct rpm *rpm, int n)
+static const char *tag(struct rpm *rpm, int n, const char *miss)
 {
 	struct tag *tag;
 	
@@ -297,7 +353,7 @@ static const char *tag(struct rpm *rpm, int n)
 		if(tag->tag == n)
 			return tag->value;
 	}
-	return "";
+	return miss;
 }
 
 static const char *sig(struct rpm *rpm, int n)
@@ -1223,6 +1279,69 @@ static int rpm_sig_rewrite(int fd, struct rpm *rpm)
 	return 0;
 }
 
+
+struct jlhead *rpm_read_filenames(struct rpm *rpm)
+{
+	struct jlhead *l = jl_new();
+	const char *names = tag(rpm, RPMTAG_FILENAMES, (void*)0);
+	const char *dirindexes, *dirnames;
+	
+	/* the old simple way. plain filenames in a list */
+	if(names) {
+		const char *p=names;
+		char *n;
+		while(p && *p) {
+			n = strchr(p, '\n');
+			if(n) jl_append(l, strndup(p, n-p));
+			if(!n) {
+				jl_append(l, strdup(p));
+				break;
+			}
+			p = n+1;
+		}
+		return l;
+	}
+	
+	names = tag(rpm, RPMTAG_BASENAMES, (void*)0);
+	if(!names) {
+		fprintf(stderr, "bar: header lacks filenames\n");
+		return l;
+	}
+	dirindexes = tag(rpm, RPMTAG_DIRINDEXES, (void*)0);
+	if(!dirindexes) {
+		fprintf(stderr, "bar: header lacks DIRINDEXES\n");
+		return l;
+	}
+	dirnames = tag(rpm, RPMTAG_DIRNAMES, (void*)0);
+	if(!dirnames) {
+		fprintf(stderr, "bar: header lacks DIRNAMES\n");
+		return l;
+	}
+
+	{
+		const char *d=dirindexes;
+		const char *p=names;
+		char *nd, *np;
+		char *name, *dir;
+		int i;
+		while(d && p && *d && *p) {
+			nd = strchr(d, '\n');
+			np = strchr(p, '\n');
+			i = atoi(d);
+			dir = stratindex(dirnames, i);
+			name = malloc(strlen(dir)+(np?np-p:strlen(p))+1);
+			strcpy(name, dir);
+			free(dir);
+			strncat(name, p, np?np-p:strlen(p));
+			jl_append(l, name);
+			if(!np) break;
+			p = np+1;
+			d = nd+1;
+		}
+	}
+	return l;
+}
+
 static int bar_create(const char *archive, struct jlhead *files, int *err)
 {
 	int fd;
@@ -1532,7 +1651,8 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 {
 	int fd;
 	struct rpm *rpm;
-
+	struct jlhead *filenames;
+	
 	*err = 0;
 
 	rpm = rpm_new();
@@ -1543,7 +1663,7 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 	if(rpm_sig_read(fd, rpm)) return -1;
 
 	/* verify MD5 signature */
-	{
+	if(!conf.ignore_chksum)	{
 		ssize_t n;
 		int i;
 		unsigned char buf[1024];
@@ -1565,7 +1685,8 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 			sprintf(sigmd5sum+i*2, "%02x", md5sum[i]);
 		}
 		if(strcmp(sig(rpm, SIGTAG_MD5), sigmd5sum)) {
-			fprintf(stderr, "bar: MD5sum verification failed: %s %s\n", sig(rpm, SIGTAG_MD5), sigmd5sum); 
+			fprintf(stderr, "bar: MD5sum verification failed: %s %s\n", sig(rpm, SIGTAG_MD5), sigmd5sum);
+			return -1;
 		} else {
 			if(conf.verbose > 2)
 				fprintf(stderr, "bar: MD5sum verification succeeded.\n");
@@ -1573,6 +1694,7 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 		
 	}
 	
+	/* rewind to start of header */
 	if(lseek(fd, rpm->headeroffset, SEEK_SET)==-1) {
 		fprintf(stderr, "bar: Failed to seek to pos %ju\n", rpm->headeroffset);
 	}
@@ -1580,24 +1702,27 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 	if(rpm_header_read(fd, rpm)) return -1;
 
 	if(conf.info) {
-		printf("name=%s\n", tag(rpm, RPMTAG_NAME));
-		printf("version=%s\n", tag(rpm, RPMTAG_VERSION));
-		printf("release=%s\n", tag(rpm, RPMTAG_RELEASE));
-		printf("os=%s\n", tag(rpm, RPMTAG_OS));
-		printf("arch=%s\n", tag(rpm, RPMTAG_ARCH));
-		printf("license=%s\n", tag(rpm, RPMTAG_COPYRIGHT));
-		printf("size=%s\n", tag(rpm, RPMTAG_SIZE));
+		printf("name=%s\n", tag(rpm, RPMTAG_NAME, ""));
+		printf("version=%s\n", tag(rpm, RPMTAG_VERSION, ""));
+		printf("release=%s\n", tag(rpm, RPMTAG_RELEASE, ""));
+		printf("os=%s\n", tag(rpm, RPMTAG_OS, ""));
+		printf("arch=%s\n", tag(rpm, RPMTAG_ARCH, ""));
+		printf("license=%s\n", tag(rpm, RPMTAG_COPYRIGHT, ""));
+		printf("size=%s\n", tag(rpm, RPMTAG_SIZE, ""));
 		return 0;
 	}
 
-	if(strcmp(tag(rpm, RPMTAG_PAYLOADFORMAT), "cpio")) {
-		fprintf(stderr, "bar: Unsupported payload format '%s'\n", tag(rpm, RPMTAG_PAYLOADFORMAT));
+	if(strcmp(tag(rpm, RPMTAG_PAYLOADFORMAT, ""), "cpio")) {
+		fprintf(stderr, "bar: Unsupported payload format '%s'\n", tag(rpm, RPMTAG_PAYLOADFORMAT, ""));
 		return -1;
 	}
-	if(strcmp(tag(rpm, RPMTAG_PAYLOADCOMPRESSOR), "gzip")) {
-		fprintf(stderr, "bar: Unsupported payload compressor '%s'\n", tag(rpm, RPMTAG_PAYLOADCOMPRESSOR));
+	if(strcmp(tag(rpm, RPMTAG_PAYLOADCOMPRESSOR, ""), "gzip")) {
+		fprintf(stderr, "bar: Unsupported payload compressor '%s'\n", tag(rpm, RPMTAG_PAYLOADCOMPRESSOR, ""));
 		return -1;
 	}
+
+	/* retrieve filenames; they might be encoded in two different ways */
+	filenames = rpm_read_filenames(rpm);
 
 	{
 		gzFile file;
@@ -1605,10 +1730,15 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 		int n, ofd=-1;
 		char buf[4096];
 		int selected;
+		char *filemd5 = (void*)0;
 		
 		rpm->uncompressed_size = 0;
 		
 		file = gzdopen(dup(fd), "r");
+		if(!file) {
+			fprintf(stderr, "bar: gzdopen of compressed payload failed\n");
+			return -1;
+		}
 		while(1) {
 			selected=0;
 			if(cpio_read(file, &cpio)) {
@@ -1629,6 +1759,22 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 					}
 				}
 			}
+
+			{
+				int fileindex = 0;
+				char *name;
+				filemd5 = (void*)0;
+				if(!conf.ignore_chksum) {
+					jl_foreach(filenames, name) {
+						if(strcmp(name, normalize_name(cpio.name))==0) {
+							filemd5 = stratindex(tag(rpm, RPMTAG_FILEMD5S, (void*)0), fileindex);
+							break;
+						}
+						fileindex++;
+					}
+				}
+			}
+			
 			if(selected && (conf.list || conf.verbose)) {
 				if(conf.verbose) {
 					/* mode nlink uid gid size date filename */
@@ -1637,8 +1783,8 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 					localtime_r(&t, &tm);
 					strftime(buf, sizeof(buf), "%F %T", &tm);
 					if(conf.pkginfo)
-						printf("%s\t%llu\t%s\n",
-						       cpio.mode, cpio.c_filesize, cpio.name);
+						printf("%s\t%llu\t%s\t%s\n",
+						       cpio.mode, cpio.c_filesize, filemd5?filemd5:"-", cpio.name);
 					else
 						printf("%-8o %4d %6d %6d %9llu %9s %s\n",
 						       cpio.c_mode, cpio.c_nlink, cpio.c_uid, cpio.c_gid,
@@ -1668,14 +1814,18 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 				}
 				if(!strcmp(cpio.mode,"f")) {
 					char *tmpname;
-					size_t tmplen = strlen(cpio.name)+32;
+					size_t tmplen = strlen(cpio.name)+64;
+					struct timespec tp;
+					if(clock_gettime(CLOCK_MONOTONIC, &tp)) {
+						tp.tv_nsec = time(0);
+					}
 					tmpname = malloc(tmplen);
-					snprintf(tmpname, tmplen, "%s.%u", cpio.name, getpid());
+					snprintf(tmpname, tmplen, "%s.%u.%ld", cpio.name, getpid(), tp.tv_nsec);
 					tmpname[tmplen-1] = 0;
 					if(ftest(tmpname, 0777777)) {
 						free(tmpname);
 						tmpname = 0;
-					} else {					
+					} else {	
 						if(rename(cpio.name, tmpname)) {
 							free(tmpname);
 							tmpname = 0;
@@ -1743,14 +1893,57 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 				}
 			}
 
-			while( cpio.c_filesize_a) {
-				n = gzread(file, buf, cpio.c_filesize_a < sizeof(buf) ? cpio.c_filesize_a : sizeof(buf));
-				if(n <= 0) break;
-				rpm->uncompressed_size += n;
-				if(ofd >= 0) {
-					write(ofd, buf, n);
+			{
+				int i;
+				uint64_t actualsize;
+				unsigned char md5sum[MD5_DIGEST_LENGTH];
+				char filemd5sum[MD5_DIGEST_LENGTH*2+1];
+				MD5_CTX md5;
+
+				if(MD5Init(&md5)) {
+					fprintf(stderr, "bar: MD5Init failed.\n");
+					return -1;
 				}
-				cpio.c_filesize_a -= n;
+				
+				if(filemd5 && (conf.verbose > 2)) {
+					if(filemd5)
+						fprintf(stderr, "bar: md5sum of %s should be %s\n", cpio.name, filemd5);
+				}
+				
+				actualsize = cpio.c_filesize;
+				while(actualsize) {
+					n = gzread(file, buf, actualsize < sizeof(buf) ? actualsize : sizeof(buf));
+					if(n <= 0) break;
+					
+					if(!conf.ignore_chksum) MD5Update(&md5, buf, n);
+					
+					rpm->uncompressed_size += n;
+					if(ofd >= 0) {
+						write(ofd, buf, n);
+					}
+					cpio.c_filesize_a -= n;
+					actualsize -= n;
+				}
+				while(cpio.c_filesize_a) {
+					n = gzread(file, buf, cpio.c_filesize_a < sizeof(buf) ? cpio.c_filesize_a : sizeof(buf));
+                                        if(n <= 0) break;
+					cpio.c_filesize_a -= n;
+				}
+				MD5Final(md5sum, &md5);
+				for(i=0;i<MD5_DIGEST_LENGTH;i++) {
+					sprintf(filemd5sum+i*2, "%02x", md5sum[i]);
+				}
+				if(!conf.ignore_chksum) {
+					if(conf.verbose > 2)
+						fprintf(stderr, "bar: md5sum calculated to %s\n", filemd5sum);
+					if(filemd5) {
+						if(!strcmp(cpio.mode,"f") && strcmp(filemd5sum, filemd5)) {
+							fprintf(stderr, "bar: md5sum mismatch of file %s\n", cpio.name);
+							return -1;
+						}
+					}
+				}
+				if(filemd5) free(filemd5);
 			}
 			if(ofd >= 0) {
 				struct timeval tv[2];
@@ -2051,6 +2244,7 @@ int main(int argc, char **argv)
 		       "\n"
 		       " Create/extract options:\n"
 		       " --prefix <path>        add prefix <path> to all filepaths\n"
+		       " --nosum                ignore checksums\n"
 		       "\n"
 		       " Package handler information:\n"
 		       " --pkginfo\n"
@@ -2074,6 +2268,7 @@ int main(int argc, char **argv)
 	while(jelopt(argv, 0, "release", &conf.tag.release, &err));
 	while(jelopt(argv, 0, "version", &conf.tag.version, &err));
 	while(jelopt(argv, 0, "pkginfo", NULL, &err)) conf.pkginfo=conf.verbose=1;
+	while(jelopt(argv, 0, "nosum", NULL, &err)) conf.ignore_chksum=1;
 	while(jelopt(argv, 0, "prefix", &conf.prefix, &err)) {
 		int len = strlen(conf.prefix);
 		if(len)
