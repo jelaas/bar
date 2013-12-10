@@ -23,6 +23,7 @@
 #include <grp.h>
 #include <dirent.h>
 #include <limits.h>
+#include <errno.h>
 
 #include "md5.h"
 #include "bar_rpm.h"
@@ -1731,6 +1732,7 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 		char buf[4096];
 		int selected;
 		char *filemd5 = (void*)0;
+		char *tmpname = (void*)0;
 		
 		rpm->uncompressed_size = 0;
 		
@@ -1813,35 +1815,30 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 					cpio.c_filesize_a = 0;
 				}
 				if(!strcmp(cpio.mode,"f")) {
-					char *tmpname;
 					size_t tmplen = strlen(cpio.name)+64;
 					struct timespec tp;
 					if(clock_gettime(CLOCK_MONOTONIC, &tp)) {
 						tp.tv_nsec = time(0);
 					}
 					tmpname = malloc(tmplen);
-					snprintf(tmpname, tmplen, "%s.%u.%ld", cpio.name, getpid(), tp.tv_nsec);
+					if(!tmpname) {
+						fprintf(stderr, "bar: Failed to alloc tmpname for %s\n", cpio.name);
+						return -1;
+					}
+					snprintf(tmpname, tmplen, "%s.tmp.%u.%ld", cpio.name, getpid(), tp.tv_nsec);
 					tmpname[tmplen-1] = 0;
-					if(ftest(tmpname, 0777777)) {
-						free(tmpname);
-						tmpname = 0;
-					} else {	
-						if(rename(cpio.name, tmpname)) {
-							free(tmpname);
-							tmpname = 0;
+					if(!ftest(tmpname, 0777777)) {
+						if(unlink(tmpname)) {
+							fprintf(stderr, "bar: Failed to unlink tmp file %s\n", tmpname);
+							return -1;
 						}
 					}
-					unlink(cpio.name);
-					ofd = open(cpio.name, O_WRONLY|O_CREAT|O_TRUNC, 0755);
+					ofd = open(tmpname, O_WRONLY|O_CREAT|O_TRUNC, 0755);
 					if(ofd == -1) {
-						fprintf(stderr, "bar: Failed to create file %s\n", cpio.name);
+						fprintf(stderr, "bar: Failed to create file %s\n", tmpname);
 						if(tmpname) rename(tmpname, cpio.name);
 						return -1;
 					}
-					if(tmpname && unlink(tmpname)) {
-						fprintf(stderr, "bar: Failed to unlink tmp file %s\n", tmpname);
-					}
-					if(tmpname) free(tmpname);
 				}
 				if(!strcmp(cpio.mode,"c")) {
 					if(!ftest(cpio.name, S_IFCHR)) {
@@ -1877,14 +1874,27 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 							return -1;
 						}
 					}
-				if(chmod(cpio.name, cpio.c_mode & 07777)) {
-					fprintf(stderr, "bar: Failed to set mode of %s\n", cpio.name);
+				if(chmod(tmpname?tmpname:cpio.name, cpio.c_mode & 07777)) {
+					fprintf(stderr, "bar: Failed to set mode of %s\n", tmpname?tmpname:cpio.name);
 					*err=1;
 				}
-				if(chown(cpio.name, cpio.c_uid, cpio.c_gid)) {
-					fprintf(stderr, "bar: Failed to set owner of %s\n", cpio.name);
+				if(chown(tmpname?tmpname:cpio.name, cpio.c_uid, cpio.c_gid)) {
+					fprintf(stderr, "bar: Failed to set owner of %s\n", tmpname?tmpname:cpio.name);
 					*err=1;
 				}
+
+				{
+					struct timeval tv[2];
+					tv[0].tv_sec = cpio.c_mtime;
+					tv[0].tv_usec = 0;
+					tv[1].tv_sec = cpio.c_mtime;
+					tv[1].tv_usec = 0;
+					if(lutimes(tmpname?tmpname:cpio.name, tv)) {
+						fprintf(stderr, "bar: Failed to set mtime of %s\n", tmpname?tmpname:cpio.name);
+						*err=1;
+					}
+				}
+
 			}
 			if(conf.verbose > 1) {
 				if(cpio.c_filesize_a) {
@@ -1919,7 +1929,12 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 					
 					rpm->uncompressed_size += n;
 					if(ofd >= 0) {
-						write(ofd, buf, n);
+						if(write(ofd, buf, n)==-1) {
+							fprintf(stderr, "bar: error writing to %s: %s\n", tmpname, strerror(errno));
+							close(ofd);
+							unlink(tmpname);
+							return -1;
+						}
 					}
 					cpio.c_filesize_a -= n;
 					actualsize -= n;
@@ -1953,11 +1968,22 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 				tv[1].tv_sec = cpio.c_mtime;
 				tv[1].tv_usec = 0;
 				if(futimes(ofd, tv)) {
-					fprintf(stderr, "bar: Failed to set mtime of %s\n", cpio.name);
+					fprintf(stderr, "bar: Failed to set mtime of %s\n", tmpname);
                                         *err=1;
 				}
+				if(fsync(ofd)) {
+					fprintf(stderr, "bar: fsync failed for %s\n", tmpname);
+					close(fd);
+					return -1;
+				}
 				close(ofd);
+				if(rename(tmpname, cpio.name)) {
+					fprintf(stderr, "bar: fsync failed to rename %s to %s\n", tmpname, cpio.name);
+					return -1;
+				}
 				ofd=-1;
+				free(tmpname);
+				tmpname = (void*)0;
 			}
 		}
 		gzclose_r(file);
