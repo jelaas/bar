@@ -47,11 +47,14 @@
 struct {
 	int recursive,create,extract,verbose,verify,list,info,pkginfo;
 	int ignore_chksum;
+	int printtag;
+	int quotechar;
 	char *prefix;
 	char *cwd;
 	struct {
 		char *arch, *buildtime, *os, *license, *version, *release, *name;
 		char *fuser, *fgroup;
+		char *postin, *postun;
 	} tag;
 } conf;
 
@@ -115,6 +118,40 @@ struct cpio_host {
 
 	size_t uncompressed_size;
 };
+
+/*
+ * Remove quotes and translate special quotes 'n', 't'
+ */
+char *dequote(char *s)
+{
+	char *p, *d = strdup(s);
+	for(p=d;*s;) {
+		if(*s == conf.quotechar) {
+			if(*(s+1) == conf.quotechar) {
+				*p++ = *s++;
+				s++;
+				continue;
+			}
+			if(!*(s+1))
+				break;
+			if(*(s+1) == 'n') {
+				s+=2;
+				*p++ = '\n';
+				continue;
+			}
+			if(*(s+1) == 't') {
+				s+=2;
+				*p++ = '\t';
+				continue;
+			}
+			s+=2;
+			continue;
+		}
+		*p++ = *s++;
+	}
+	*p = 0;
+	return d;
+}
 
 
 /* normalize name to always start with '/'
@@ -317,6 +354,14 @@ static const char *tagstr(int t)
 		return "RPMTAG_BASENAMES";
 	case RPMTAG_DIRNAMES:
 		return "RPMTAG_DIRNAMES";
+	case RPMTAG_POSTIN:
+		return "RPMTAG_POSTIN";
+	case RPMTAG_POSTUN:
+		return "RPMTAG_POSTUN";
+	case RPMTAG_POSTINPROG:
+		return "RPMTAG_POSTINPROG";
+	case RPMTAG_POSTUNPROG:
+		return "RPMTAG_POSTUNPROG";
 	}
 	return "";
 }
@@ -1208,9 +1253,10 @@ static int rpm_header_read(int fd, struct rpm *rpm)
 		}
 	}
 	
-	if(conf.verbose > 2) 
+	if(conf.verbose > 2 || conf.printtag) 
 		jl_foreach(rpm->tags, tag) {
-			fprintf(stderr, "bar: Tag: %d [%s] type: %s value: %s\n", tag->tag, tagstr(tag->tag), hdrtypestr(tag->type), tag->value);
+			if(conf.verbose > 2 || conf.printtag == tag->tag)
+				fprintf(stderr, "bar: Tag: %d [%s] type: %s value: %s\n", tag->tag, tagstr(tag->tag), hdrtypestr(tag->type), tag->value);
 		}
 	free(buf);
 	return 0;
@@ -1424,11 +1470,26 @@ static int bar_create(const char *archive, struct jlhead *files, int *err)
 	tag->value = conf.tag.os;
         jl_append(rpm->tags, tag);
 
+	/* RPMTAG_ARCH 1022 */
 	tag = tag_new(RPMTAG_ARCH);
 	tag->value = conf.tag.arch;
         jl_append(rpm->tags, tag);
 
-	/* RPMTAG_FILENAMES */
+	/* RPMTAG_POSTIN 1024 */
+	if(conf.tag.postin) {
+		tag = tag_new(RPMTAG_POSTIN);
+		tag->value = conf.tag.postin;
+		jl_append(rpm->tags, tag);
+	}
+
+	/* RPMTAG_POSTUN 1026 */
+	if(conf.tag.postun) {
+		tag = tag_new(RPMTAG_POSTUN);
+		tag->value = conf.tag.postun;
+		jl_append(rpm->tags, tag);
+	}
+	
+	/* RPMTAG_FILENAMES 1027 */
 	tag = tag_new(RPMTAG_FILENAMES);
 	tag->type = HDRTYPE_STRARRAY;
 	tag->count = files->len;
@@ -1569,6 +1630,16 @@ static int bar_create(const char *archive, struct jlhead *files, int *err)
 		p += (strlen(f->group)+1);
 	}
 	jl_append(rpm->tags, tag);
+
+	/* RPMTAG_POSTINPROG 1086 */
+	tag = tag_new(RPMTAG_POSTINPROG);
+	tag->value = "/bin/sh";
+        jl_append(rpm->tags, tag);
+	
+        /* RPMTAG_POSTUNPROG 1088 */
+	tag = tag_new(RPMTAG_POSTUNPROG);
+	tag->value = "/bin/sh";
+        jl_append(rpm->tags, tag);
 
 	/* RPMTAG_FILEDEVICES 1095 INT32 */
 	tag = tag_new(RPMTAG_FILEDEVICES);
@@ -2246,6 +2317,8 @@ int main(int argc, char **argv)
 		conf.tag.buildtime = strdup(buf);
 	}
 
+	conf.quotechar = '%';
+
 	if(jelopt(argv, 'h', "help", 0, &err)) {
 	usage:
 		printf("bar [-hriclxv] archive-file [path ..]\n"
@@ -2265,12 +2338,16 @@ int main(int argc, char **argv)
 		       " --license <string>     [GPLv2+]\n"
 		       " --name <string>        [from archive-file name]\n"
 		       " --os <osname>          [from uname]\n"
+		       " --postin <string>      post install script\n"
+		       " --postun <string>      post uninstall script\n"
 		       " --release <string>     [current date and time YYYYMMDD.HHMMSS]\n"
 		       " --version <string>     [0]\n"
 		       "\n"
 		       " Create/extract options:\n"
 		       " --prefix <path>        add prefix <path> to all filepaths\n"
 		       " --nosum                ignore checksums\n"
+		       " --quotechar <char>     [%%] used for inserting special chars\n"
+		       " --printtag <tag number>\n"
 		       "\n"
 		       " Package handler information:\n"
 		       " --pkginfo\n"
@@ -2291,9 +2368,19 @@ int main(int argc, char **argv)
 	while(jelopt(argv, 0, "license", &conf.tag.license, &err));
 	while(jelopt(argv, 0, "name", &conf.tag.name, &err));
 	while(jelopt(argv, 0, "os", &conf.tag.os, &err));
+	while(jelopt(argv, 0, "postin", &conf.tag.postin, &err))
+		conf.tag.postin = dequote(conf.tag.postin);
+	while(jelopt(argv, 0, "postun", &conf.tag.postun, &err))
+		conf.tag.postun = dequote(conf.tag.postun);
+	{
+		char *tmp;
+		while(jelopt(argv, 0, "quotechar", &tmp, &err))
+			if(tmp) conf.quotechar = *tmp;
+	}
 	while(jelopt(argv, 0, "release", &conf.tag.release, &err));
 	while(jelopt(argv, 0, "version", &conf.tag.version, &err));
 	while(jelopt(argv, 0, "pkginfo", NULL, &err)) conf.pkginfo=conf.verbose=1;
+	while(jelopt_int(argv, 0, "printtag", &conf.printtag, &err));
 	while(jelopt(argv, 0, "nosum", NULL, &err)) conf.ignore_chksum=1;
 	while(jelopt(argv, 0, "prefix", &conf.prefix, &err)) {
 		int len = strlen(conf.prefix);
