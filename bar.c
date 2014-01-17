@@ -493,13 +493,14 @@ static ssize_t cpio_write(gzFile file, const struct file *f, struct rpm *rpm)
 			fprintf(stderr, "bar: Failed to open %s\n", f->name);
 			return -1;
 		}
-		fbuf = malloc(4096);
+		#define FBUFSIZE 4096
+		fbuf = malloc(FBUFSIZE);
 		if(!fbuf) {
 			fprintf(stderr, "bar: Failed to malloc fbuf memory %s\n", f->name);
 			return -1;
 		}
 		while(filesize) {
-			count = read(ifd, fbuf, sizeof(fbuf));
+			count = read(ifd, fbuf, FBUFSIZE);
 			if(count < 1) {
 				fprintf(stderr, "bar: read failed. bytes left %zu. for %s\n", filesize, f->name);
 				return -1;
@@ -513,6 +514,7 @@ static ssize_t cpio_write(gzFile file, const struct file *f, struct rpm *rpm)
 			uncompressed_size += n;
 			rpm->sumsize += n;
 		}
+		if(fbuf) free(fbuf);
 		close(ifd);
 		
 		n = ((statb.st_size + 3) & ~3) - statb.st_size;
@@ -553,6 +555,7 @@ static ssize_t cpio_write(gzFile file, const struct file *f, struct rpm *rpm)
 			if(n <= 0) return -1;
 			uncompressed_size += n;
 		}
+		free(fbuf);
 	}
 	
 	return uncompressed_size;
