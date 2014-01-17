@@ -53,6 +53,7 @@ struct {
 	char *cwd;
 	struct {
 		char *arch, *buildtime, *os, *license, *version, *release, *name;
+		char *summary, *description, *group;
 		char *fuser, *fgroup;
 		char *postin, *postun;
 	} tag;
@@ -1435,12 +1436,12 @@ static int bar_create(const char *archive, struct jlhead *files, int *err)
 	jl_append(rpm->tags, tag);
 
 	tag = tag_new(RPMTAG_SUMMARY);
-	tag->value = "None";
+	tag->value = conf.tag.summary;
         tag->type = HDRTYPE_I18NSTRING;
 	jl_append(rpm->tags, tag);
 
 	tag = tag_new(RPMTAG_DESCRIPTION);
-	tag->value = "None";
+	tag->value = conf.tag.description;
         tag->type = HDRTYPE_I18NSTRING;
 	jl_append(rpm->tags, tag);
 
@@ -1459,12 +1460,13 @@ static int bar_create(const char *archive, struct jlhead *files, int *err)
 	tag->type = HDRTYPE_INT32;
 	jl_append(rpm->tags, tag);
 
+	/* RPMTAG_COPYRIGHT 1014 */
 	tag = tag_new(RPMTAG_COPYRIGHT);
 	tag->value = conf.tag.license;
 	jl_append(rpm->tags, tag);
 
 	tag = tag_new(RPMTAG_GROUP);
-	tag->value = "None";
+	tag->value = conf.tag.group;
         tag->type = HDRTYPE_I18NSTRING;
 	jl_append(rpm->tags, tag);
 
@@ -2292,6 +2294,9 @@ int main(int argc, char **argv)
 			conf.tag.os = strdup(buf.sysname);
 		}
 	}
+	conf.tag.summary = "None";
+	conf.tag.description = "None";
+	conf.tag.group = "None";
 	conf.tag.license = "Unknown";
 	conf.tag.version = "0";
 	{
@@ -2335,14 +2340,17 @@ int main(int argc, char **argv)
 		       " Overriding default tag values:\n"
 		       " --arch <archname>      [from uname]\n"
 		       " --buildtime <unixtime> [current time]\n"
+		       " --description <string> [None]\n"
 		       " --fgroup <groupname>   [file owner]\n"
 		       " --fuser <username>     [file owner]\n"
+		       " --group <packagegroup> [None]\n"
 		       " --license <string>     [GPLv2+]\n"
 		       " --name <string>        [from archive-file name]\n"
 		       " --os <osname>          [from uname]\n"
 		       " --postin <string>      post install script\n"
 		       " --postun <string>      post uninstall script\n"
 		       " --release <string>     [current date and time YYYYMMDD.HHMMSS]\n"
+		       " --summary <string>     [None]\n"
 		       " --version <string>     [0]\n"
 		       "\n"
 		       " Create/extract options:\n"
@@ -2381,6 +2389,12 @@ int main(int argc, char **argv)
 	}
 	while(jelopt(argv, 0, "release", &conf.tag.release, &err));
 	while(jelopt(argv, 0, "version", &conf.tag.version, &err));
+	while(jelopt(argv, 0, "description", &conf.tag.description, &err))
+		conf.tag.description = dequote(conf.tag.description);
+	while(jelopt(argv, 0, "group", &conf.tag.group, &err))
+		conf.tag.group = dequote(conf.tag.group);
+	while(jelopt(argv, 0, "summary", &conf.tag.summary, &err))
+		conf.tag.summary = dequote(conf.tag.summary);
 	while(jelopt(argv, 0, "pkginfo", NULL, &err)) conf.pkginfo=conf.verbose=1;
 	while(jelopt_int(argv, 0, "printtag", &conf.printtag, &err));
 	while(jelopt(argv, 0, "nosum", NULL, &err)) conf.ignore_chksum=1;
