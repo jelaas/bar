@@ -34,12 +34,9 @@ STATUS
 Creating, listing and extracting archives work.
 MD5sum is now calculated and written into the signature.
 The SIGTAG MD5sum is verified.
-You can now override: arch, license, name, os, release, version.
+You can now override: arch, license, name, os, release, version, summary, description, group.
 Recursive selection of files supported.
 Verification of per file (checksum), done.
-
-TODO
-Ability to specify values of some tags: summary, description, group.
 
 PERFORMANCE
 time bar -cr kernel-source.rpm /src/kernel-3.6.0/
