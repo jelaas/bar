@@ -1236,7 +1236,6 @@ static int rpm_header_read(int fd, struct rpm *rpm)
 			p = store + ntohl(entry->offset);
 			for(i=0;i<ntohl(entry->count);i++) {
 				n = sprintf(b, "%hu", ntohs(*(int16_t*)p));
-				if(conf.verbose > 3) fprintf(stderr, "bar: read 16bit value: %s\n", b);
 				b += n;
 				if(i < ntohl(entry->count)-1) {
                                         sprintf(b, "\n");
@@ -1784,11 +1783,11 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 		return 0;
 	}
 
-	if(strcmp(tag(rpm, RPMTAG_PAYLOADFORMAT, ""), "cpio")) {
+	if(strcmp(tag(rpm, RPMTAG_PAYLOADFORMAT, "cpio"), "cpio")) {
 		fprintf(stderr, "bar: Unsupported payload format '%s'\n", tag(rpm, RPMTAG_PAYLOADFORMAT, ""));
 		return -1;
 	}
-	if(strcmp(tag(rpm, RPMTAG_PAYLOADCOMPRESSOR, ""), "gzip")) {
+	if(strcmp(tag(rpm, RPMTAG_PAYLOADCOMPRESSOR, "gzip"), "gzip")) {
 		fprintf(stderr, "bar: Unsupported payload compressor '%s'\n", tag(rpm, RPMTAG_PAYLOADCOMPRESSOR, ""));
 		return -1;
 	}
