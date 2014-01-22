@@ -1,8 +1,8 @@
 CC=musl-gcc-x86_32
 CFLAGS=-Wall
-LDLIBS=-lz
+LDLIBS=-lz -llzma
 all:	bar
-bar:	bar.o md5.o jelopt.o jelist.o
+bar:	bar.o md5.o jelopt.o jelist.o zstream.o
 rpm:	bar
 	./bar -c --license=GPLv2+ --name bar bar.rpm bar
 clean:

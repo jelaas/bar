@@ -15,7 +15,6 @@
 #include <stdlib.h>
 #include <arpa/inet.h>
 #include <string.h>
-#include <zlib.h>
 #include <time.h>
 #include <sys/time.h>
 #include <sys/utsname.h>
@@ -30,6 +29,7 @@
 #include "bar_cpio.h"
 #include "jelopt.h"
 #include "jelist.h"
+#include "zstream.h"
 
 /*
  * bar [-options] archive-file [path ..]
@@ -89,6 +89,8 @@ struct rpm {
 	off_t eofoffset;
 	size_t uncompressed_size;
 	size_t sumsize;
+
+	char *compressor, *digestalgo;
 	
 	/* offsets to sigtag values that can only be written after the whole payload is generated */
 	off_t sigtag_md5sum;
@@ -363,6 +365,8 @@ static const char *tagstr(int t)
 		return "RPMTAG_POSTINPROG";
 	case RPMTAG_POSTUNPROG:
 		return "RPMTAG_POSTUNPROG";
+	case RPMTAG_FILEDIGESTALGO:
+		return "RPMTAG_FILEDIGESTALGO";
 	}
 	return "";
 }
@@ -414,7 +418,7 @@ static const char *sig(struct rpm *rpm, int n)
 	return "";
 }
 
-static ssize_t cpio_write(gzFile file, const struct file *f, struct rpm *rpm)
+static ssize_t cpio_write(struct zstream *z, const struct file *f, struct rpm *rpm)
 {
 	struct cpio_header header;
 	struct stat statb;
@@ -472,7 +476,7 @@ static ssize_t cpio_write(gzFile file, const struct file *f, struct rpm *rpm)
 		memcpy(header.c_filesize, buf, 8);
 	}
 	
-	n = gzwrite(file, &header, sizeof(header));
+	n = z->write(z, &header, sizeof(header));
 	if(n <= 0) return -1;
 	uncompressed_size += n;
 	
@@ -480,7 +484,7 @@ static ssize_t cpio_write(gzFile file, const struct file *f, struct rpm *rpm)
 		fprintf(stderr, "bar: Aligned [4] %d to %d\n",
 			sizeof(header)+strlen(f->cpio_name),
 			(sizeof(header)+strlen(f->cpio_name)+3)&~3);
-	n = gzwrite(file, f->cpio_name, ((sizeof(header)+strlen(f->cpio_name)+3)&~3) - sizeof(header));
+	n = z->write(z, f->cpio_name, ((sizeof(header)+strlen(f->cpio_name)+3)&~3) - sizeof(header));
 	if(n <= 0) return -1;
 	uncompressed_size += n;
 	
@@ -507,9 +511,9 @@ static ssize_t cpio_write(gzFile file, const struct file *f, struct rpm *rpm)
 				return -1;
 			}
 			filesize -= count;
-			n = gzwrite(file, fbuf, count);
+			n = z->write(z, fbuf, count);
 			if(n <= 0) {
-				fprintf(stderr, "bar: gzwrite failed. bytes left %zu. for %s\n", filesize, f->name);
+				fprintf(stderr, "bar: compressed write failed. bytes left %zu. for %s\n", filesize, f->name);
 				return -1;
 			}
 			uncompressed_size += n;
@@ -521,9 +525,9 @@ static ssize_t cpio_write(gzFile file, const struct file *f, struct rpm *rpm)
 		n = ((statb.st_size + 3) & ~3) - statb.st_size;
 		if(n) {
 			memset(buf, 0, sizeof(buf));
-			n = gzwrite(file, buf, n);
+			n = z->write(z, buf, n);
 			if(n <= 0) {
-				fprintf(stderr, "bar: gzwrite failed for padding. %s\n", f->name);
+				fprintf(stderr, "bar: compressed write failed for padding. %s\n", f->name);
 				return -1;
 			}
 			uncompressed_size += n;
@@ -544,7 +548,7 @@ static ssize_t cpio_write(gzFile file, const struct file *f, struct rpm *rpm)
 		}
 		((char*)fbuf)[count] = 0; /* zero terminate link string */
 		count++;
-		n = gzwrite(file, fbuf, count);
+		n = z->write(z, fbuf, count);
 		if(n <= 0) return -1;
 		uncompressed_size += n;
 		rpm->sumsize += n;
@@ -552,7 +556,7 @@ static ssize_t cpio_write(gzFile file, const struct file *f, struct rpm *rpm)
 		n = ((count + 3) & ~3) - count;
 		if(n) {
 			memset(buf, 0, sizeof(buf));
-			n = gzwrite(file, buf, n);
+			n = z->write(z, buf, n);
 			if(n <= 0) return -1;
 			uncompressed_size += n;
 		}
@@ -562,7 +566,7 @@ static ssize_t cpio_write(gzFile file, const struct file *f, struct rpm *rpm)
 	return uncompressed_size;
 }
 
-static int cpio_read(gzFile file, struct cpio_host *cpio)
+static int cpio_read(struct zstream *z, struct cpio_host *cpio)
 {
 	struct cpio_header header;
 	int n, trailer=0;
@@ -570,7 +574,7 @@ static int cpio_read(gzFile file, struct cpio_host *cpio)
 	
 	cpio->uncompressed_size = 0;
 	
-	n = gzread(file, &header, sizeof(header));
+	n = z->read(z, &header, sizeof(header));
 	if(n <= 0) {
 		fprintf(stderr, "bar: Failed reading the cpio_header. EOF?\n");
 		return -1;
@@ -618,7 +622,7 @@ static int cpio_read(gzFile file, struct cpio_host *cpio)
 	cpio->c_namesize += (((sizeof(header)+cpio->c_namesize+3)&~0x3) -
 			    (sizeof(header)+cpio->c_namesize));
 	cpio->name = malloc(cpio->c_namesize+1+strlen("./"));
-	n = gzread(file, cpio->name+2, cpio->c_namesize);
+	n = z->read(z, cpio->name+2, cpio->c_namesize);
 	if(n>0) cpio->name[n+2] = 0;
 	else { 
 		fprintf(stderr, "bar: Error reading name from cpio.\n");
@@ -703,17 +707,19 @@ static int rpm_lead_write(int fd, struct rpm *rpm)
 
 static int rpm_payload_write(int fd, struct rpm *rpm, struct jlhead *files)
 {
-	gzFile file;
+	struct zstream z;
 	struct file *f;
 	struct file trailer;
 	ssize_t n;
 	int zfd;
 	
 	zfd = dup(fd);
-	file = gzdopen(zfd, "w");
+	zstream(&z, "gzip");
+	z.init(&z);
+	z.open(&z, zfd, "w");
 	jl_foreach(files, f) {
 		if(conf.verbose) printf("%s\n", f->normalized_name);
-		if((n=cpio_write(file, f, rpm)) == -1) {
+		if((n=cpio_write(&z, f, rpm)) == -1) {
 			fprintf(stderr, "bar: Error writing cpio header\n");
 			return -1;
 		}
@@ -723,13 +729,13 @@ static int rpm_payload_write(int fd, struct rpm *rpm, struct jlhead *files)
 	trailer.name = "TRAILER!!!";
 	trailer.normalized_name = "TRAILER!!!";
 	trailer.cpio_name = "TRAILER!!!";
-	if((n=cpio_write(file, &trailer, rpm)) == -1) {
+	if((n=cpio_write(&z, &trailer, rpm)) == -1) {
 		fprintf(stderr, "bar: Error writing cpio header for trailer\n");
 		return -1;
 	}
 	rpm->uncompressed_size += n;
 	
-	gzclose(file);
+	z.close(&z);
 	
 	rpm->eofoffset = lseek(fd, 0, SEEK_CUR);
 	
@@ -1792,16 +1798,30 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 		fprintf(stderr, "bar: Unsupported payload format '%s'\n", tag(rpm, RPMTAG_PAYLOADFORMAT, ""));
 		return -1;
 	}
-	if(strcmp(tag(rpm, RPMTAG_PAYLOADCOMPRESSOR, "gzip"), "gzip")) {
+	
+	rpm->compressor = (void*) 0;
+	if(strcmp(tag(rpm, RPMTAG_PAYLOADCOMPRESSOR, ""), "xz") == 0)
+		rpm->compressor = "xz";
+	if(strcmp(tag(rpm, RPMTAG_PAYLOADCOMPRESSOR, "gzip"), "gzip") == 0)
+		rpm->compressor = "gzip";
+
+	if(!rpm->compressor) {
 		fprintf(stderr, "bar: Unsupported payload compressor '%s'\n", tag(rpm, RPMTAG_PAYLOADCOMPRESSOR, ""));
 		return -1;
 	}
 
+	rpm->digestalgo = "md5";
+	/* See for algo numbers https://tools.ietf.org/html/rfc4880#section-9.4 */
+	if(strcmp(tag(rpm, RPMTAG_FILEDIGESTALGO, ""), "8") == 0)
+		rpm->digestalgo = "sha256";
+	
+	if(conf.verbose > 2) fprintf(stderr, "bar: Using digest algorithm: %s\n", rpm->digestalgo);
+	
 	/* retrieve filenames; they might be encoded in two different ways */
 	filenames = rpm_read_filenames(rpm);
 
 	{
-		gzFile file;
+		struct zstream z;
 		struct cpio_host cpio;
 		int n, ofd=-1;
 		char buf[4096];
@@ -1811,14 +1831,18 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 		
 		rpm->uncompressed_size = 0;
 		
-		file = gzdopen(dup(fd), "r");
-		if(!file) {
-			fprintf(stderr, "bar: gzdopen of compressed payload failed\n");
+		if(zstream(&z, rpm->compressor)) {
+			fprintf(stderr, "bar: unsupported compressor %s\n", rpm->compressor);
+			return -1;
+		}
+		z.init(&z);
+		if(z.open(&z, dup(fd), "r")) {
+			fprintf(stderr, "bar: open of compressed payload failed\n");
 			return -1;
 		}
 		while(1) {
 			selected=0;
-			if(cpio_read(file, &cpio)) {
+			if(cpio_read(&z, &cpio)) {
 				fprintf(stderr, "bar: Error reading cpio header\n");
 				return -1;
 			}
@@ -1877,7 +1901,7 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 				if(!strcmp(cpio.mode,"l")) {
 					char *path;
 					path = malloc(cpio.c_filesize_a);
-					n = gzread(file, path, cpio.c_filesize_a);
+					n = z.read(&z, path, cpio.c_filesize_a);
 					if(n != cpio.c_filesize_a) {
 						fprintf(stderr, "bar: Failed to read symlink for: %s\n", cpio.name);
 						return -1;
@@ -1997,7 +2021,7 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 				
 				actualsize = cpio.c_filesize;
 				while(actualsize) {
-					n = gzread(file, buf, actualsize < sizeof(buf) ? actualsize : sizeof(buf));
+					n = z.read(&z, buf, actualsize < sizeof(buf) ? actualsize : sizeof(buf));
 					if(n <= 0) break;
 					
 					if(!conf.ignore_chksum) MD5Update(&md5, buf, n);
@@ -2015,7 +2039,7 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 					actualsize -= n;
 				}
 				while(cpio.c_filesize_a) {
-					n = gzread(file, buf, cpio.c_filesize_a < sizeof(buf) ? cpio.c_filesize_a : sizeof(buf));
+					n = z.read(&z, buf, cpio.c_filesize_a < sizeof(buf) ? cpio.c_filesize_a : sizeof(buf));
                                         if(n <= 0) break;
 					cpio.c_filesize_a -= n;
 				}
@@ -2061,7 +2085,7 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 				tmpname = (void*)0;
 			}
 		}
-		gzclose_r(file);
+		z.close(&z);
 	}
 
 	if(conf.verbose > 1) {
@@ -2297,7 +2321,7 @@ int main(int argc, char **argv)
 	conf.tag.summary = "None";
 	conf.tag.description = "None";
 	conf.tag.group = "None";
-	conf.tag.license = "Unknown";
+	conf.tag.license = "GPLv2+";
 	conf.tag.version = "0";
 	{
 		struct tm tm;
