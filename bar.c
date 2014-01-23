@@ -24,12 +24,12 @@
 #include <limits.h>
 #include <errno.h>
 
-#include "md5.h"
 #include "bar_rpm.h"
 #include "bar_cpio.h"
 #include "jelopt.h"
 #include "jelist.h"
 #include "zstream.h"
+#include "digest.h"
 
 /*
  * bar [-options] archive-file [path ..]
@@ -1309,19 +1309,18 @@ static int rpm_sig_rewrite(int fd, struct rpm *rpm)
 	{
 		ssize_t n;
 		unsigned char buf[1024];
-		MD5_CTX md5;
-		unsigned char md5sum[MD5_DIGEST_LENGTH];
+		struct digest d;
 
-		if(MD5Init(&md5)) {
+		if(digest(&d, "md5")) {
                         fprintf(stderr, "bar: MD5Init failed.\n");
                         return -1;
                 }
 		while(1) {
                         n = read(fd, buf, sizeof(buf));
                         if(n < 1) break;
-                        MD5Update(&md5, buf, n);
+                        d.update(&d, buf, n);
                 }
-                MD5Final(md5sum, &md5);
+                d.final(&d);
 
 		if(lseek(fd, rpm->sigtag_md5sum, SEEK_SET)==-1) {
 			fprintf(stderr, "bar: Failed to seek to pos %ju\n", rpm->sigtag_md5sum);
@@ -1330,7 +1329,7 @@ static int rpm_sig_rewrite(int fd, struct rpm *rpm)
 		if(conf.verbose > 1) {
 			fprintf(stderr, "bar: Rewriting SIGTAG_MD5\n");
 		}
-		write(fd, md5sum, MD5_DIGEST_LENGTH);
+		write(fd, d.binary, d.size);
 	}
 	return 0;
 }
@@ -1747,27 +1746,21 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 	/* verify MD5 signature */
 	if(!conf.ignore_chksum)	{
 		ssize_t n;
-		int i;
 		unsigned char buf[1024];
-		MD5_CTX md5;
-		unsigned char md5sum[MD5_DIGEST_LENGTH];
-		char sigmd5sum[MD5_DIGEST_LENGTH*2+1];
+		struct digest d;
 
-		if(MD5Init(&md5)) {
+		if(digest(&d, "md5")) {
                         fprintf(stderr, "bar: MD5Init failed.\n");
                         return -1;
                 }
 		while(1) {
                         n = read(fd, buf, sizeof(buf));
                         if(n < 1) break;
-                        MD5Update(&md5, buf, n);
+                        d.update(&d, buf, n);
                 }
-                MD5Final(md5sum, &md5);
-		for(i=0;i<MD5_DIGEST_LENGTH;i++) {
-			sprintf(sigmd5sum+i*2, "%02x", md5sum[i]);
-		}
-		if(strcmp(sig(rpm, SIGTAG_MD5), sigmd5sum)) {
-			fprintf(stderr, "bar: MD5sum verification failed: %s %s\n", sig(rpm, SIGTAG_MD5), sigmd5sum);
+		d.final(&d);
+		if(strcmp(sig(rpm, SIGTAG_MD5), d.hexstr)) {
+			fprintf(stderr, "bar: MD5sum verification failed: %s %s\n", sig(rpm, SIGTAG_MD5), d.hexstr);
 			return -1;
 		} else {
 			if(conf.verbose > 2)
@@ -2003,14 +1996,11 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 			}
 
 			{
-				int i;
 				uint64_t actualsize;
-				unsigned char md5sum[MD5_DIGEST_LENGTH];
-				char filemd5sum[MD5_DIGEST_LENGTH*2+1];
-				MD5_CTX md5;
+				struct digest d;
 
-				if(MD5Init(&md5)) {
-					fprintf(stderr, "bar: MD5Init failed.\n");
+				if(digest(&d, rpm->digestalgo)) {
+					fprintf(stderr, "bar: Digest init failed for algorith: %s\n", rpm->digestalgo);
 					return -1;
 				}
 				
@@ -2024,7 +2014,7 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 					n = z.read(&z, buf, actualsize < sizeof(buf) ? actualsize : sizeof(buf));
 					if(n <= 0) break;
 					
-					if(!conf.ignore_chksum) MD5Update(&md5, buf, n);
+					if(!conf.ignore_chksum) d.update(&d, buf, n);
 					
 					rpm->uncompressed_size += n;
 					if(ofd >= 0) {
@@ -2043,15 +2033,12 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
                                         if(n <= 0) break;
 					cpio.c_filesize_a -= n;
 				}
-				MD5Final(md5sum, &md5);
-				for(i=0;i<MD5_DIGEST_LENGTH;i++) {
-					sprintf(filemd5sum+i*2, "%02x", md5sum[i]);
-				}
+				d.final(&d);
 				if(!conf.ignore_chksum) {
 					if(conf.verbose > 2)
-						fprintf(stderr, "bar: md5sum calculated to %s\n", filemd5sum);
+						fprintf(stderr, "bar: md5sum calculated to %s\n", d.hexstr);
 					if(filemd5) {
-						if(!strcmp(cpio.mode,"f") && strcmp(filemd5sum, filemd5)) {
+						if(!strcmp(cpio.mode,"f") && strcmp(d.hexstr, filemd5)) {
 							fprintf(stderr, "bar: md5sum mismatch of file %s\n", cpio.name);
 							return -1;
 						}
@@ -2098,11 +2085,10 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 static int file_new(struct jlhead *files, const char *fn, int create, int recursive)
 {
 	struct file *f;
-	int fd, i;
+	int fd;
 	ssize_t n;
 	unsigned char buf[PATH_MAX];
-	MD5_CTX md5;
-	unsigned char md5sum[MD5_DIGEST_LENGTH];
+	struct digest d;
 	
 	f = malloc(sizeof(struct file));
 	if(!f) {
@@ -2155,7 +2141,7 @@ static int file_new(struct jlhead *files, const char *fn, int create, int recurs
 		return -1;
 	}
 	
-	f->md5 = malloc(MD5_DIGEST_LENGTH*2+1);
+	f->md5 = malloc(DIGEST_MAX_HEX_SIZE);
 	if(!f->md5) {
 		fprintf(stderr, "bar: failed to malloc memory for md5 computation: ");
 		fprintf(stderr, "%s\n", f->name);
@@ -2219,7 +2205,7 @@ static int file_new(struct jlhead *files, const char *fn, int create, int recurs
 			return -1;
 		}
 		
-		if(MD5Init(&md5)) {
+		if(digest(&d, "md5")) {
 			fprintf(stderr, "bar: MD5Init failed.\n");
 			close(fd);
 			return -1;
@@ -2227,13 +2213,11 @@ static int file_new(struct jlhead *files, const char *fn, int create, int recurs
 		while(1) {
 			n = read(fd, buf, sizeof(buf));
 			if(n < 1) break;
-			MD5Update(&md5, buf, n);
+			d.update(&d, buf, n);
 		}
 		close(fd);
-		MD5Final(md5sum, &md5);
-		for(i=0;i<MD5_DIGEST_LENGTH;i++) {
-			sprintf(f->md5+i*2, "%02x", md5sum[i]);
-		}
+		d.final(&d);
+		strcpy(f->md5, d.hexstr);
 	}
 	if(conf.verbose > 2) {
 		fprintf(stderr, "bar: Added file: %s md5sum: %s\n", f->name, f->md5);
