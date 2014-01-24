@@ -2,7 +2,7 @@
  * File: bar.c
  * Implements: rpm file archive creator and extractor
  *
- * Copyright: Jens Låås, Uppsala University, 2013
+ * Copyright: Jens Låås, Uppsala University, 2013 - 2014
  * Copyright license: According to GPL, see file COPYING in this directory.
  *
  */
@@ -2334,6 +2334,29 @@ int main(int argc, char **argv)
 
 	conf.quotechar = '%';
 
+	if(jelopt(argv, 0, "examples", 0, &err)) {
+		printf("Examples: \n"
+		       " Listing contents:\n"
+		       "  $ bar -lv archive.rpm\n"
+		       " Creating an archive:\n"
+		       "  $ bar -cr archive.rpm /file/path\n"
+		       " Advanced archive creation:\n"
+		       "  $ bar	\\\n"
+		       "     --license=GPLv2+\\\n"
+		       "     --summary \"My archive named 'archive'\"\\\n"
+		       "     --group=Applications/Internet\\\n"
+		       "     --description \"Text%%nSecond line.%%nThird line\"\\\n"
+		       "     --prefix=/path/to/prepend\\\n"
+		       "     --fuser=myuser --fgroup=users\\\n"
+		       "     --version=3.0.0\\\n"
+		       "     --release=1\\\n"
+		       "     --arch=noarch\\\n"
+		       "     --name=archive\\\n"
+		       "     --postin \"echo post_install%%necho line2%%n\"\\\n"
+		       "     -cr archive-3.0.0-1.noarch.rpm path1 path2\n"
+			);
+		exit(0);
+	}
 	if(jelopt(argv, 'h', "help", 0, &err)) {
 	usage:
 		printf("bar [-hriclxv] archive-file [path ..]\n"
@@ -2369,6 +2392,9 @@ int main(int argc, char **argv)
 		       "\n"
 		       " Package handler information:\n"
 		       " --pkginfo\n"
+		       "\n"
+		       " Examples:\n"
+		       " --examples\n"
 			);
 		exit(rc);
 	}
