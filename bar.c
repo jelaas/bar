@@ -1894,6 +1894,10 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 				if(!strcmp(cpio.mode,"l")) {
 					char *path;
 					path = malloc(cpio.c_filesize_a);
+					if(!tmpname) {
+						fprintf(stderr, "bar: Failed to alloc link content memory for %s\n", cpio.name);
+						return -1;
+					}
 					n = z.read(&z, path, cpio.c_filesize_a);
 					if(n != cpio.c_filesize_a) {
 						fprintf(stderr, "bar: Failed to read symlink for: %s\n", cpio.name);
