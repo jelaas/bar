@@ -46,7 +46,7 @@
 
 struct {
 	int recursive,create,extract,verbose,verify,list,info,pkginfo;
-	int ignore_chksum;
+	int ignore_chksum, sync;
 	int printtag;
 	int quotechar;
 	char *prefix;
@@ -2061,14 +2061,19 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 					fprintf(stderr, "bar: Failed to set mtime of %s\n", tmpname);
                                         *err=1;
 				}
-				if(fsync(ofd)) {
+				if(conf.sync && fsync(ofd)) {
 					fprintf(stderr, "bar: fsync failed for %s\n", tmpname);
 					close(fd);
 					return -1;
 				}
-				close(ofd);
+				if(close(ofd)) {
+					fprintf(stderr, "bar: failed closing file %s after writing\n", tmpname);
+					/* try to clean up the tmp-file atleast */
+					unlink(tmpname);
+					return -1;
+				}
 				if(rename(tmpname, cpio.name)) {
-					fprintf(stderr, "bar: fsync failed to rename %s to %s\n", tmpname, cpio.name);
+					fprintf(stderr, "bar: failed to rename %s to %s\n", tmpname, cpio.name);
 					return -1;
 				}
 				ofd=-1;
@@ -2337,7 +2342,8 @@ int main(int argc, char **argv)
 	}
 
 	conf.quotechar = '%';
-
+	conf.sync = 1;
+	
 	if(jelopt(argv, 0, "examples", 0, &err)) {
 		printf("Examples: \n"
 		       " Listing contents:\n"
@@ -2391,6 +2397,7 @@ int main(int argc, char **argv)
 		       " Create/extract options:\n"
 		       " --prefix <path>        add prefix <path> to all filepaths\n"
 		       " --nosum                ignore checksums\n"
+		       " --nosync               do not sync to disk while writing\n"
 		       " --quotechar <char>     [%%] used for inserting special chars\n"
 		       " --printtag <tag number>\n"
 		       "\n"
@@ -2436,6 +2443,7 @@ int main(int argc, char **argv)
 	while(jelopt(argv, 0, "pkginfo", NULL, &err)) conf.pkginfo=conf.verbose=1;
 	while(jelopt_int(argv, 0, "printtag", &conf.printtag, &err));
 	while(jelopt(argv, 0, "nosum", NULL, &err)) conf.ignore_chksum=1;
+	while(jelopt(argv, 0, "nosync", NULL, &err)) conf.sync=0;
 	while(jelopt(argv, 0, "prefix", &conf.prefix, &err)) {
 		int len = strlen(conf.prefix);
 		if(len)
