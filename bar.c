@@ -1894,7 +1894,7 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 				if(!strcmp(cpio.mode,"l")) {
 					char *path;
 					path = malloc(cpio.c_filesize_a);
-					if(!tmpname) {
+					if(!path) {
 						fprintf(stderr, "bar: Failed to alloc link content memory for %s\n", cpio.name);
 						return -1;
 					}
