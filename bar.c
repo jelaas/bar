@@ -1898,6 +1898,12 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 						fprintf(stderr, "bar: Failed to alloc link content memory for %s\n", cpio.name);
 						return -1;
 					}
+					if(conf.verbose > 1) {
+						if(cpio.c_filesize_a) {
+							fprintf(stderr, "bar: Reading %llu bytes of link contents for %s\n",
+								cpio.c_filesize_a, cpio.name);
+						}
+					}
 					n = z.read(&z, path, cpio.c_filesize_a);
 					if(n != cpio.c_filesize_a) {
 						fprintf(stderr, "bar: Failed to read symlink for: %s\n", cpio.name);
@@ -1908,7 +1914,7 @@ static int bar_extract(const char *archive, struct jlhead *files, int *err)
 					symlink(path, cpio.name);
 					free(path);
 					/* set size to zero, so it wont be read later */
-					cpio.c_filesize_a = 0;
+					cpio.c_filesize_a = cpio.c_filesize = 0;
 				}
 				if(!strcmp(cpio.mode,"f")) {
 					size_t tmplen = strlen(cpio.name)+64;
