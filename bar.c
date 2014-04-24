@@ -622,6 +622,11 @@ static int cpio_read(struct zstream *z, struct cpio_host *cpio)
 	cpio->c_namesize += (((sizeof(header)+cpio->c_namesize+3)&~0x3) -
 			    (sizeof(header)+cpio->c_namesize));
 	cpio->name = malloc(cpio->c_namesize+1+strlen("./"));
+	if(!cpio->name) {
+		fprintf(stderr, "bar: Failed to malloc memory for cpio name ");
+		fprintf(stderr, "of length %d\n", cpio->c_namesize);
+		return -1;
+	}
 	n = z->read(z, cpio->name+2, cpio->c_namesize);
 	if(n>0) cpio->name[n+2] = 0;
 	else { 
@@ -758,8 +763,16 @@ static int rpm_hdr_write(int fd, struct rpm *rpm, struct header *hdr, struct jlh
 	
 	store_len = 1024;
 	store = storep = malloc(store_len);
+	if(!store) {
+		fprintf(stderr, "bar: Failed to allocate memory for store\n");
+		return -1;
+	}
 	index_len = tags->len;
 	index = indexp = malloc(index_len * sizeof(struct indexentry));
+	if(!index) {
+		fprintf(stderr, "bar: Failed to allocate memory for index\n");
+		return -1;
+	}
 	
 	/* create index and store simultaneously */
 	jl_foreach(tags, tag) {
@@ -995,6 +1008,10 @@ static int rpm_sig_read(int fd, struct rpm *rpm)
 				     sizeof(struct indexentry)*ntohl(rpm->sig.entries));
 	for(i=0;i<ntohl(rpm->sig.entries);i++) {
 		entry = malloc(sizeof(struct indexentry));
+		if(!entry) {
+			fprintf(stderr, "bar: Failed to allocate memory for indexentry %d.\n", i);
+                        return -1;
+		}
 		if(read(fd, entry, sizeof(struct indexentry)) != sizeof(struct indexentry)) {
 			fprintf(stderr, "bar: Failed to read indexentry %d.\n", i);
 			return -1;
@@ -1003,6 +1020,10 @@ static int rpm_sig_read(int fd, struct rpm *rpm)
 	}
 	
 	store = malloc(ntohl(rpm->sig.size));
+	if(!store) {
+		fprintf(stderr, "bar: Failed to allocate memory for store\n");
+		return -1;
+	}
 	
 	i = (ntohl(rpm->sig.size)+7)&~0x7; /* adjust to even 8-byte boundary */
 	if(conf.verbose > 1) fprintf(stderr, "bar: Aligned %d to %d\n", ntohl(rpm->sig.size), i);
@@ -1027,6 +1048,10 @@ static int rpm_sig_read(int fd, struct rpm *rpm)
 				hdrtypestr(ntohl(entry->type)), ntohl(entry->offset), ntohl(entry->count));
 
 		tag = malloc(sizeof(struct tag));
+		if(!tag) {
+			fprintf(stderr, "bar: Failed to allocate memory for tag\n");
+			return -1;
+		}
 		memset(tag, 0, sizeof(struct tag));
 		tag->tag = ntohl(entry->tag);
 		tag->type = ntohl(entry->type);
@@ -1063,6 +1088,10 @@ static int rpm_sig_read(int fd, struct rpm *rpm)
 				p++;
 			}
 			tag->value=malloc(len+1);
+			if(!tag->value) {
+				fprintf(stderr, "bar: Failed to allocate memory for tag value\n");
+				return -1;
+			}
 			b = tag->value;
 			p = store + ntohl(entry->offset);
 			for(i=0;i<ntohl(entry->count);i++) {
@@ -1121,6 +1150,10 @@ static int rpm_header_read(int fd, struct rpm *rpm)
 				     sizeof(struct indexentry)*ntohl(rpm->header.entries));
 	for(i=0;i<ntohl(rpm->header.entries);i++) {
 		entry = malloc(sizeof(struct indexentry));
+		if(!entry) {
+			fprintf(stderr, "bar: Failed to allocate memory for entry\n");
+			return -1;
+		}
 		if(read(fd, entry, sizeof(struct indexentry)) != sizeof(struct indexentry)) {
 			fprintf(stderr, "bar: Failed to read indexentries.\n");
 			return -1;
@@ -1129,6 +1162,10 @@ static int rpm_header_read(int fd, struct rpm *rpm)
 	}
 	
 	store = malloc(ntohl(rpm->header.size));
+	if(!store) {
+		fprintf(stderr, "bar: Failed to allocate memory for store\n");
+		return -1;
+	}
 	
 	i = ntohl(rpm->header.size);
 	if(conf.verbose > 1) fprintf(stderr, "bar: Reading store sized %d\n", i);
@@ -1156,6 +1193,10 @@ static int rpm_header_read(int fd, struct rpm *rpm)
 				hdrtypestr(ntohl(entry->type)), ntohl(entry->offset), ntohl(entry->count));
 		
 		tag = malloc(sizeof(struct tag));
+		if(!tag) {
+			fprintf(stderr, "bar: Failed to allocate buffer for tag\n");
+			return -1;
+		}
 		memset(tag, 0, sizeof(struct tag));
 		tag->tag = ntohl(entry->tag);
 		tag->type = ntohl(entry->type);
@@ -1206,6 +1247,10 @@ static int rpm_header_read(int fd, struct rpm *rpm)
 				p++;
 			}
 			tag->value=malloc(len+1);
+			if(!tag->value) {
+				fprintf(stderr, "bar: Failed to allocate buffer for tag value\n");
+				return -1;
+			}
 			b = tag->value;
 			p = store + ntohl(entry->offset);
 			for(i=0;i<ntohl(entry->count);i++) {
@@ -1221,11 +1266,19 @@ static int rpm_header_read(int fd, struct rpm *rpm)
 		}
 		if(ntohl(entry->type) == HDRTYPE_I18NSTRING) {
 			tag->value = strdup(store + ntohl(entry->offset));
+			if(!tag->value) {
+                                fprintf(stderr, "bar: Failed to allocate buffer for tag value\n");
+                                return -1;
+                        }
 		}
 		if(ntohl(entry->type) == HDRTYPE_INT32) {
 			char *b, *p;
 			int n;
 			tag->value = malloc(ntohl(entry->count) * 12);
+			if(!tag->value) {
+                                fprintf(stderr, "bar: Failed to allocate buffer for tag value\n");
+                                return -1;
+                        }
 			b = tag->value;
 			p = store + ntohl(entry->offset);
 			for(i=0;i<ntohl(entry->count);i++) {
@@ -1242,6 +1295,10 @@ static int rpm_header_read(int fd, struct rpm *rpm)
 			char *b, *p;
 			int n;
 			tag->value = malloc(ntohl(entry->count) * 7);
+			if(!tag->value) {
+                                fprintf(stderr, "bar: Failed to allocate buffer for tag value\n");
+                                return -1;
+                        }
 			b = tag->value;
 			p = store + ntohl(entry->offset);
 			for(i=0;i<ntohl(entry->count);i++) {
@@ -1385,6 +1442,10 @@ struct jlhead *rpm_read_filenames(struct rpm *rpm)
 			i = atoi(d);
 			dir = stratindex(dirnames, i);
 			name = malloc(strlen(dir)+(np?np-p:strlen(p))+1);
+			if(!name) {
+				fprintf(stderr, "bar: Failed to allocate memory for filename\n");
+				return NULL;
+			}
 			strcpy(name, dir);
 			free(dir);
 			strncat(name, p, np?np-p:strlen(p));
@@ -1507,6 +1568,10 @@ static int bar_create(const char *archive, struct jlhead *files, int *err)
 		tag->size += (strlen(f->normalized_name)+1);
 	}
 	tag->value = malloc(tag->size);
+	if(!tag->value) {
+		fprintf(stderr, "bar: Failed to allocate buffer for tag value\n");
+		return -1;
+	}
 	p = tag->value;
 	jl_foreach(files, f) {
 		strcpy(p, f->normalized_name);
@@ -1519,6 +1584,10 @@ static int bar_create(const char *archive, struct jlhead *files, int *err)
 	tag->type = HDRTYPE_INT32;
 	tag->count = files->len;
 	tag->value = malloc(files->len * 12);
+	if(!tag->value) {
+		fprintf(stderr, "bar: Failed to allocate buffer for tag value\n");
+		return -1;
+	}
 	p = tag->value;
 	jl_foreach(files, f) {
 		sprintf(p, "%ju\n", f->stat.st_size);
@@ -1531,6 +1600,10 @@ static int bar_create(const char *archive, struct jlhead *files, int *err)
 	tag->type = HDRTYPE_INT16;
 	tag->count = files->len;
 	tag->value = malloc(files->len * 7);
+	if(!tag->value) {
+		fprintf(stderr, "bar: Failed to allocate buffer for tag value\n");
+		return -1;
+	}
 	p = tag->value;
 	jl_foreach(files, f) {
 		sprintf(p, "%u\n", f->stat.st_mode);
@@ -1543,6 +1616,10 @@ static int bar_create(const char *archive, struct jlhead *files, int *err)
 	tag->type = HDRTYPE_INT16;
 	tag->count = files->len;
 	tag->value = malloc(files->len * 7);
+	if(!tag->value) {
+		fprintf(stderr, "bar: Failed to allocate buffer for tag value\n");
+		return -1;
+	}
 	p = tag->value;
 	jl_foreach(files, f) {
 		sprintf(p, "%lld\n", f->stat.st_rdev);
@@ -1555,6 +1632,10 @@ static int bar_create(const char *archive, struct jlhead *files, int *err)
 	tag->type = HDRTYPE_INT32;
 	tag->count = files->len;
 	tag->value = malloc(files->len * 12);
+	if(!tag->value) {
+		fprintf(stderr, "bar: Failed to allocate buffer for tag value\n");
+		return -1;
+	}
 	p = tag->value;
 	jl_foreach(files, f) {
 		sprintf(p, "%ld\n", f->stat.st_mtime);
@@ -1571,6 +1652,10 @@ static int bar_create(const char *archive, struct jlhead *files, int *err)
 		tag->size += (strlen(f->md5)+1);
 	}
 	tag->value = malloc(tag->size);
+	if(!tag->value) {
+		fprintf(stderr, "bar: Failed to allocate buffer for tag value\n");
+		return -1;
+	}
 	p = tag->value;
 	jl_foreach(files, f) {
 		strcpy(p, f->md5);
@@ -1587,6 +1672,10 @@ static int bar_create(const char *archive, struct jlhead *files, int *err)
 		tag->size += (strlen(f->link)+1);
 	}
 	tag->value = malloc(tag->size);
+	if(!tag->value) {
+		fprintf(stderr, "bar: Failed to allocate buffer for tag value\n");
+		return -1;
+	}
 	p = tag->value;
 	jl_foreach(files, f) {
 		strcpy(p, f->link);
@@ -1601,6 +1690,10 @@ static int bar_create(const char *archive, struct jlhead *files, int *err)
 	tag->type = HDRTYPE_INT32;
 	tag->count = files->len;
 	tag->value = malloc(files->len * 12);
+	if(!tag->value) {
+		fprintf(stderr, "bar: Failed to allocate buffer for tag value\n");
+		return -1;
+	}
 	p = tag->value;
 	jl_foreach(files, f) {
 		sprintf(p, "0\n");
@@ -1617,6 +1710,10 @@ static int bar_create(const char *archive, struct jlhead *files, int *err)
 		tag->size += (strlen(f->user)+1);
 	}
 	tag->value = malloc(tag->size);
+	if(!tag->value) {
+		fprintf(stderr, "bar: Failed to allocate buffer for tag value\n");
+		return -1;
+	}
 	p = tag->value;
 	jl_foreach(files, f) {
 		strcpy(p, f->user);
@@ -1633,6 +1730,10 @@ static int bar_create(const char *archive, struct jlhead *files, int *err)
 		tag->size += (strlen(f->group)+1);
 	}
 	tag->value = malloc(tag->size);
+	if(!tag->value) {
+		fprintf(stderr, "bar: Failed to allocate buffer for tag value\n");
+		return -1;
+	}
 	p = tag->value;
 	jl_foreach(files, f) {
 		strcpy(p, f->group);
@@ -1655,6 +1756,10 @@ static int bar_create(const char *archive, struct jlhead *files, int *err)
 	tag->type = HDRTYPE_INT32;
 	tag->count = files->len;
 	tag->value = malloc(files->len * 12);
+	if(!tag->value) {
+		fprintf(stderr, "bar: Failed to allocate buffer for tag value\n");
+		return -1;
+	}
 	p = tag->value;
 	jl_foreach(files, f) {
 		sprintf(p, "%lld\n", f->stat.st_dev);
@@ -1667,6 +1772,10 @@ static int bar_create(const char *archive, struct jlhead *files, int *err)
 	tag->type = HDRTYPE_INT32;
 	tag->count = files->len;
 	tag->value = malloc(files->len * 12);
+	if(!tag->value) {
+		fprintf(stderr, "bar: Failed to allocate buffer for tag value\n");
+		return -1;
+	}
 	p = tag->value;
 	jl_foreach(files, f) {
 		sprintf(p, "%llu\n", f->stat.st_ino);
@@ -1683,6 +1792,10 @@ static int bar_create(const char *archive, struct jlhead *files, int *err)
 		tag->size += (strlen("")+1);
 	}
 	tag->value = malloc(tag->size);
+	if(!tag->value) {
+		fprintf(stderr, "bar: Failed to allocate buffer for tag value\n");
+		return -1;
+	}
 	p = tag->value;
 	jl_foreach(files, f) {
 		strcpy(p, "");
@@ -2141,6 +2254,11 @@ static int file_new(struct jlhead *files, const char *fn, int create, int recurs
 	if(conf.prefix) {
 		char *p;
 		p = malloc(strlen(conf.prefix)+strlen(f->normalized_name)+1);
+		if(!p) {
+			fprintf(stderr, "bar: failed to malloc memory for prefixed filename: ");
+			fprintf(stderr, "%s\n", f->name);
+			return -1;
+		}
 		strcpy(p, conf.prefix);
 		strcat(p, f->normalized_name);
 		f->normalized_name = p;
@@ -2148,6 +2266,11 @@ static int file_new(struct jlhead *files, const char *fn, int create, int recurs
 	
 	/* Names in the cpio archive should start with "./" */
 	f->cpio_name = malloc(strlen(f->normalized_name)+2);
+	if(!f->cpio_name) {
+		fprintf(stderr, "bar: failed to malloc memory for filename with ./ prefix: ");
+		fprintf(stderr, "%s\n", f->normalized_name);
+		return -1;
+	}
 	strcpy(f->cpio_name+1, f->normalized_name);
 	*f->cpio_name = '.';
 	
