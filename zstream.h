@@ -1,3 +1,6 @@
+#ifndef ZSTREAM_H
+#define ZSTREAM_H
+
 #include <zlib.h>
 #include <lzma.h>
 
@@ -19,3 +22,5 @@ struct zstream  {
 };
 
 int zstream(struct zstream *z, const char *codec);
+
+#endif

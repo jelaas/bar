@@ -23,8 +23,10 @@
 #include <dirent.h>
 #include <limits.h>
 #include <errno.h>
+#include <stdarg.h>
 
 #include "bar_rpm.h"
+#include "bar_extract.h"
 #include "bar_cpio.h"
 #include "jelopt.h"
 #include "jelist.h"
@@ -45,82 +47,17 @@
  */
 
 struct {
-	int recursive,create,extract,verbose,verify,list,info,pkginfo;
-	int ignore_chksum, sync;
-	int printtag;
+	int recursive,create,extract,verbose,verify;
 	int quotechar;
-	char *prefix;
-	char *cwd;
 	struct {
 		char *arch, *buildtime, *os, *license, *version, *release, *name;
 		char *summary, *description, *group;
 		char *fuser, *fgroup;
 		char *postin, *postun;
 	} tag;
+	struct logcb log;
+	struct bar_options opt;
 } conf;
-
-struct tag {
-	int tag;
-	int type;
-	int track;
-	int count;
-	int size;
-	char *value;
-};
-
-struct file {
-	char *name; /* name to use for file access when creating archive */
-	char *normalized_name; /* name to write in header */
-	char *cpio_name; /* name to write in cpio-archive */
-	struct stat stat;
-	char *md5;
-	char *user, *group;
-	char *link;
-};
-
-struct rpm {
-	struct rpmlead lead;
-	struct header sig;
-	struct jlhead *sigtags;
-	struct header header;
-	struct jlhead *tags;
-	off_t headeroffset;
-	off_t payloadoffset;
-	off_t eofoffset;
-	size_t uncompressed_size;
-	size_t sumsize;
-
-	char *compressor, *digestalgo;
-	
-	/* offsets to sigtag values that can only be written after the whole payload is generated */
-	off_t sigtag_md5sum;
-	off_t sigtag_size;	
-	off_t sigtag_payloadsize;
-
-	/* offsets within header */
-	off_t rpmtag_size;
-};
-
-struct cpio_host {
-	char c_magic[6]; /* cpio: 070701 */
-        uint64_t c_ino;
-        uint32_t c_mode;
-        uint32_t c_uid;
-        uint32_t c_gid;
-        uint32_t c_nlink;
-	uint64_t c_mtime;
-        uint64_t c_filesize;
-        uint64_t c_filesize_a;
-        uint32_t c_devmajor;
-        uint32_t c_devminor;
-	dev_t rdev;
-	uint32_t c_rdevmajor;
-	uint32_t c_rdevminor;
-	uint32_t c_namesize;
-	char *name, *mode;
-
-	size_t uncompressed_size;
-};
 
 /*
  * Remove quotes and translate special quotes 'n', 't'
@@ -156,53 +93,6 @@ char *dequote(char *s)
 	return d;
 }
 
-
-/* normalize name to always start with '/'
- */
-const char *normalize_name(const char *fn)
-{
-	if(*fn == '/') return fn;
-	if(strncmp(fn, "./", 2)==0) return fn+1;
-	return fn;
-}
-
-int strindex(const char *lines, const char *str)
-{
-	char *p=(char*)lines;
-	char *n;
-	int i=0;
-
-	while(p && *p) {
-		n = strchr(p, '\n');
-		if(n && !strncmp(p, str, n-p))
-			return i;
-		if(!n) {
-			if(!strcmp(p, str)) return i;
-			return -1;
-		}
-		i++;
-		p = n+1;
-	}
-	return -1;
-}
-
-char *stratindex(const char *lines, int idx)
-{
-	char *p=(char*)lines;
-	char *n;
-	while(p && *p) {
-		n = strchr(p, '\n');
-		if(idx == 0) {
-			if(n) return strndup(p, n-p);
-			return strdup(p);
-		}
-		p = n;
-		if(p) p++;
-		idx--;
-	}
-	return (void*)0;
-}
-
 static int hextobin(char *dst, const uint8_t *src, size_t len)
 {
 	int i;
@@ -231,157 +121,6 @@ static int ftest(const char *path, mode_t flags)
 	return -1;
 }
 
-static int mkpath(const char *path)
-{
-	const char *p;
-	const char *n;
-	char buf[NAME_MAX+1];
-	
-	p = path;
-	if(chdir(conf.cwd)) return -1;
-	
-	while(1) {
-		while(*p == '/') p++;
-		n = strchr(p, '/');
-		if(!n) break;
-		if( (n-p) >= sizeof(buf)) {
-			fprintf(stderr, "bar: Path element too long\n");
-			return -1;
-		}
-		strncpy(buf, p, n-p);
-		buf[n-p] = 0;
-		if(chdir(buf)) {
-			if(conf.verbose) fprintf(stderr, "bar: Creating subdirectory '%s'\n", buf);
-			mkdir(buf, 0755);
-			if(chdir(buf)) {
-				fprintf(stderr, "bar: Failed chdir('%s')\n", buf);
-				return -1;
-			}
-		}
-		p=n+1;
-	}
-	if(chdir(conf.cwd)) return -1;
-	return 0;
-}
-
-static const char *hdrtypestr(int t)
-{
-	switch(t) {
-	case HDRTYPE_NULL:
-		return "NULL";
-	case HDRTYPE_CHAR:
-		return "CHAR";
-	case HDRTYPE_INT8:
-		return "INT8";
-	case HDRTYPE_INT16:
-		return "INT16";
-	case HDRTYPE_INT32:
-		return "INT32";
-	case HDRTYPE_INT64:
-		return "INT64";
-	case HDRTYPE_STRING:
-		return "STRING";
-	case HDRTYPE_BIN:
-		return "BIN";
-	case HDRTYPE_STRARRAY:
-		return "STRARRAY";
-	case HDRTYPE_I18NSTRING:
-		return "I18NSTRING";
-	}
-	return "UNKNOWN";
-}
-
-static const char *sigstr(int t)
-{
-	switch(t) {
-	case SIGTAG_MD5:
-		return "SIGTAG_MD5";
-	case SIGTAG_SIZE:
-		return "SIGTAG_SIZE";
-	case SIGTAG_PAYLOADSIZE:
-		return "SIGTAG_PAYLOADSIZE";
-	case SIGTAG_HEADERSIGNATURES:
-		return "SIGTAG_HEADERSIGNATURES";
-	case SIGTAG_SHA1:
-		return "SIGTAG_SHA1";
-	}
-	return "";
-}
-
-static const char *tagstr(int t)
-{
-	switch(t) {
-	case RPMTAG_NAME:
-		return "RPMTAG_NAME";
-	case RPMTAG_VERSION:
-		return "RPMTAG_VERSION";
-	case RPMTAG_RELEASE:
-		return "RPMTAG_RELEASE";
-	case RPMTAG_SUMMARY:
-		return "RPMTAG_SUMMARY";
-	case RPMTAG_DESCRIPTION:
-		return "RPMTAG_DESCRIPTION";
-	case RPMTAG_BUILDTIME:
-		return "RPMTAG_BUILDTIME";
-	case RPMTAG_SIZE:
-		return "RPMTAG_SIZE";
-	case RPMTAG_COPYRIGHT:
-		return "RPMTAG_COPYRIGHT";
-	case RPMTAG_GROUP:
-		return "RPMTAG_GROUP";
-	case RPMTAG_OS:
-		return "RPMTAG_OS";
-	case RPMTAG_ARCH:
-		return "RPMTAG_ARCH";
-	case RPMTAG_PAYLOADFORMAT:
-		return "RPMTAG_PAYLOADFORMAT";
-	case RPMTAG_PAYLOADCOMPRESSOR:
-		return "RPMTAG_PAYLOADCOMPRESSOR";
-	case RPMTAG_PAYLOADFLAGS:
-		return "RPMTAG_PAYLOADFLAGS";
-	case RPMTAG_HEADERI18NTABLE:
-		return "RPMTAG_HEADERI18NTABLE";
-	case RPMTAG_FILENAMES:
-		return "RPMTAG_FILENAMES";
-	case RPMTAG_FILESIZES:
-		return "RPMTAG_FILESIZES";
-	case RPMTAG_FILEMODES:
-		return "RPMTAG_FILEMODES";
-	case RPMTAG_FILERDEVS:
-		return "RPMTAG_FILERDEVS";
-	case RPMTAG_FILEMD5S:
-		return "RPMTAG_FILEMD5S";
-	case RPMTAG_DIRINDEXES:
-		return "RPMTAG_DIRINDEXES";
-	case RPMTAG_BASENAMES:
-		return "RPMTAG_BASENAMES";
-	case RPMTAG_DIRNAMES:
-		return "RPMTAG_DIRNAMES";
-	case RPMTAG_POSTIN:
-		return "RPMTAG_POSTIN";
-	case RPMTAG_POSTUN:
-		return "RPMTAG_POSTUN";
-	case RPMTAG_POSTINPROG:
-		return "RPMTAG_POSTINPROG";
-	case RPMTAG_POSTUNPROG:
-		return "RPMTAG_POSTUNPROG";
-	case RPMTAG_FILEDIGESTALGO:
-		return "RPMTAG_FILEDIGESTALGO";
-	}
-	return "";
-}
-
-static struct rpm *rpm_new()
-{
-	struct rpm *rpm;
-	rpm = malloc(sizeof(struct rpm));
-	if(!rpm) return (void*)0;
-	memset(rpm, 0, sizeof(struct rpm));
-	rpm->sigtags = jl_new();
-	rpm->tags = jl_new();
-	return rpm;
-}
-
 static struct tag *tag_new(int n)
 {
 	struct tag *tag;
@@ -394,309 +133,6 @@ static struct tag *tag_new(int n)
 	tag->count = 1;
 	tag->size = 0;
 	return tag;
-}
-
-static const char *tag(struct rpm *rpm, int n, const char *miss)
-{
-	struct tag *tag;
-	
-	jl_foreach(rpm->tags, tag) {
-		if(tag->tag == n)
-			return tag->value;
-	}
-	return miss;
-}
-
-static const char *sig(struct rpm *rpm, int n)
-{
-	struct tag *tag;
-	
-	jl_foreach(rpm->sigtags, tag) {
-		if(tag->tag == n)
-			return tag->value;
-	}
-	return "";
-}
-
-static ssize_t cpio_write(struct zstream *z, const struct file *f, struct rpm *rpm)
-{
-	struct cpio_header header;
-	struct stat statb;
-	char buf[16];
-	void *fbuf;
-	int ifd;
-	size_t filesize;
-	int n;
-	int trailer = 0;
-	ssize_t count, uncompressed_size = 0;
-
-	if(conf.verbose > 1)
-		fprintf(stderr, "bar: Adding %s to index\n", f->name);
-
-	if(!strcmp("TRAILER!!!", f->name))
-		trailer = 1;
-	
-	if(trailer)
-		memset(&statb, 0, sizeof(statb));
-	else {
-		if(lstat(f->name, &statb)) {
-			fprintf(stderr, "bar: Failed to stat %s\n", f->name);
-			return -1;
-		}
-	}
-
-	memset(&header, '0', sizeof(header));
-	
-	strncpy(header.c_magic, CPIOMAGIC, 6);
-
-	sprintf(buf, "%08X", statb.st_nlink);
-	memcpy(header.c_nlink, buf, 8);
-
-	sprintf(buf, "%08X", (unsigned int) statb.st_mtime);
-	memcpy(header.c_mtime, buf, 8);
-
-	sprintf(buf, "%08X", statb.st_mode);
-	memcpy(header.c_mode, buf, 8);
-
-	sprintf(buf, "%08X", statb.st_uid);
-	memcpy(header.c_uid, buf, 8);
-	
-	sprintf(buf, "%08X", statb.st_gid);
-	memcpy(header.c_gid, buf, 8);
-	
-	sprintf(buf, "%08X", strlen(f->cpio_name));
-	memcpy(header.c_namesize, buf, 8);
-
-	if(S_ISREG(statb.st_mode)) {
-		sprintf(buf, "%08X", (unsigned int) statb.st_size);
-		memcpy(header.c_filesize, buf, 8);
-	}
-	if(S_ISLNK(statb.st_mode)) {
-		sprintf(buf, "%08X", (unsigned int) statb.st_size+1);
-		memcpy(header.c_filesize, buf, 8);
-	}
-	
-	n = z->write(z, &header, sizeof(header));
-	if(n <= 0) return -1;
-	uncompressed_size += n;
-	
-	if(conf.verbose > 1)
-		fprintf(stderr, "bar: Aligned [4] %d to %d\n",
-			sizeof(header)+strlen(f->cpio_name),
-			(sizeof(header)+strlen(f->cpio_name)+3)&~3);
-	n = z->write(z, f->cpio_name, ((sizeof(header)+strlen(f->cpio_name)+3)&~3) - sizeof(header));
-	if(n <= 0) return -1;
-	uncompressed_size += n;
-	
-	if(S_ISREG(statb.st_mode)) {
-		/* write file, 4-byte aligned */
-		if(conf.verbose > 1)
-			fprintf(stderr, "bar: Writing contents of file %s\n", f->name);
-		filesize = statb.st_size;
-		ifd = open(f->name, O_RDONLY);
-		if(ifd == -1) {
-			fprintf(stderr, "bar: Failed to open %s\n", f->name);
-			return -1;
-		}
-		#define FBUFSIZE 4096
-		fbuf = malloc(FBUFSIZE);
-		if(!fbuf) {
-			fprintf(stderr, "bar: Failed to malloc fbuf memory %s\n", f->name);
-			return -1;
-		}
-		while(filesize) {
-			count = read(ifd, fbuf, FBUFSIZE);
-			if(count < 1) {
-				fprintf(stderr, "bar: read failed. bytes left %zu. for %s\n", filesize, f->name);
-				return -1;
-			}
-			filesize -= count;
-			n = z->write(z, fbuf, count);
-			if(n <= 0) {
-				fprintf(stderr, "bar: compressed write failed. bytes left %zu. for %s\n", filesize, f->name);
-				return -1;
-			}
-			uncompressed_size += n;
-			rpm->sumsize += n;
-		}
-		if(fbuf) free(fbuf);
-		close(ifd);
-		
-		n = ((statb.st_size + 3) & ~3) - statb.st_size;
-		if(n) {
-			memset(buf, 0, sizeof(buf));
-			n = z->write(z, buf, n);
-			if(n <= 0) {
-				fprintf(stderr, "bar: compressed write failed for padding. %s\n", f->name);
-				return -1;
-			}
-			uncompressed_size += n;
-		}
-	}
-	if(S_ISLNK(statb.st_mode)) {
-		/* write link, 4-byte aligned */
-		if(conf.verbose > 1)
-			fprintf(stderr, "bar: Writing contents of link %s\n", f->name);
-		filesize = statb.st_size;
-		fbuf = malloc(filesize+16);
-		if(!fbuf) return -1;
-
-		count = readlink(f->name, fbuf, filesize+16);
-		if(count < 1) {
-			fprintf(stderr, "bar: Error reading link %s\n", f->name);
-			return -1;
-		}
-		((char*)fbuf)[count] = 0; /* zero terminate link string */
-		count++;
-		n = z->write(z, fbuf, count);
-		if(n <= 0) return -1;
-		uncompressed_size += n;
-		rpm->sumsize += n;
-		
-		n = ((count + 3) & ~3) - count;
-		if(n) {
-			memset(buf, 0, sizeof(buf));
-			n = z->write(z, buf, n);
-			if(n <= 0) return -1;
-			uncompressed_size += n;
-		}
-		free(fbuf);
-	}
-	
-	return uncompressed_size;
-}
-
-static int cpio_read(struct zstream *z, struct cpio_host *cpio)
-{
-	struct cpio_header header;
-	int n, trailer=0;
-	char buf[16];
-	
-	cpio->uncompressed_size = 0;
-	
-	n = z->read(z, &header, sizeof(header));
-	if(n <= 0) {
-		fprintf(stderr, "bar: Failed reading the cpio_header. EOF?\n");
-		return -1;
-	}
-	cpio->uncompressed_size += n;
-	
-	if(strncmp(header.c_magic, CPIOMAGIC, 6)) {
-		fprintf(stderr, "bar: Wrong cpio magic\n");
-		return -1;
-	}
-	strncpy(cpio->c_magic, header.c_magic, 6);
-	
-	strncpy(buf, header.c_mode, 8); buf[8] = 0;
-	cpio->c_mode = strtoul(buf, (void*)0, 16);
-	cpio->mode = "?";
-	if(S_ISREG(cpio->c_mode)) cpio->mode = "f";
-	if(S_ISDIR(cpio->c_mode)) cpio->mode = "d";
-	if(S_ISLNK(cpio->c_mode)) cpio->mode = "l";
-	if(S_ISCHR(cpio->c_mode)) cpio->mode = "c";
-	if(S_ISBLK(cpio->c_mode)) cpio->mode = "b";
-
-	strncpy(buf, header.c_nlink, 8); buf[8] = 0;
-	cpio->c_nlink = strtoull(buf, (void*)0, 16);
-
-	strncpy(buf, header.c_rdevmajor, 8); buf[8] = 0;
-	cpio->c_rdevmajor = strtoull(buf, (void*)0, 16);
-	strncpy(buf, header.c_rdevminor, 8); buf[8] = 0;
-	cpio->c_rdevminor = strtoull(buf, (void*)0, 16);
-	cpio->rdev = makedev(cpio->c_rdevmajor, cpio->c_rdevminor);
-
-	strncpy(buf, header.c_uid, 8); buf[8] = 0;
-	cpio->c_uid = strtoull(buf, (void*)0, 16);
-	strncpy(buf, header.c_gid, 8); buf[8] = 0;
-	cpio->c_gid = strtoull(buf, (void*)0, 16);
-
-	strncpy(buf, header.c_mtime, 8); buf[8] = 0;
-	cpio->c_mtime = strtoull(buf, (void*)0, 16);
-	
-	strncpy(buf, header.c_filesize, 8); buf[8] = 0;
-	cpio->c_filesize = strtoull(buf, (void*)0, 16);
-	cpio->c_filesize_a = (cpio->c_filesize+3)&~0x3;
-	
-	strncpy(buf, header.c_namesize, 8); buf[8] = 0;
-	cpio->c_namesize = strtoul(buf, (void*)0, 16);
-	cpio->c_namesize += (((sizeof(header)+cpio->c_namesize+3)&~0x3) -
-			    (sizeof(header)+cpio->c_namesize));
-	cpio->name = malloc(cpio->c_namesize+1+strlen("./"));
-	if(!cpio->name) {
-		fprintf(stderr, "bar: Failed to malloc memory for cpio name ");
-		fprintf(stderr, "of length %d\n", cpio->c_namesize);
-		return -1;
-	}
-	n = z->read(z, cpio->name+2, cpio->c_namesize);
-	if(n>0) cpio->name[n+2] = 0;
-	else { 
-		fprintf(stderr, "bar: Error reading name from cpio.\n");
-		return -1;
-	}
-	if(conf.verbose > 3) fprintf(stderr, "bar: raw cpioname: [%s]\n",
-				     cpio->name+2);
-	if(strcmp(cpio->name+2, "TRAILER!!!")==0)
-		trailer=1;
-	if(cpio->name[2] == '/') {
-		cpio->name[1] = '.';
-		cpio->name++;
-	} else {
-		if(strncmp(cpio->name+2, "./", 2)) {
-			if(trailer) {
-				cpio->name += 2;
-			} else {
-				cpio->name[0] = '.';
-				cpio->name[1] = '/';
-			}
-		} else {
-			cpio->name += 2;
-		}
-	}
-	if(conf.prefix && (trailer==0) ) {
-		char *p;
-		if(strncmp(cpio->name, "./", 2)==0)
-			cpio->name+=2;
-		p = malloc(strlen(conf.prefix)+strlen(cpio->name)+1);
-		if(!p) {
-			fprintf(stderr, "bar: Failed to allocate memory for prefixed name of %s\n", cpio->name);
-			return -1;
-		}
-		strcpy(p, conf.prefix);
-		strcat(p, cpio->name);
-		cpio->name = p;
-	}
-	cpio->uncompressed_size += n;
-	return 0;
-}
-
-static int rpm_lead_read(int fd, struct rpm *rpm)
-{
-	if(conf.verbose > 1) fprintf(stderr, "bar: Reading lead sized %d bytes\n", sizeof(struct rpmlead));
-	if(read(fd, &rpm->lead, sizeof(struct rpmlead))!= sizeof(struct rpmlead)) {
-		fprintf(stderr, "bar: Failed to read lead.\n");
-                return -1;
-	}
-	if(ntohl(rpm->lead.magic) != RPMMAGIC) {
-		fprintf(stderr, "bar: Incorrect rpm magic in lead.\n");
-		return -1;
-	}
-
-	if(conf.verbose > 2) {
-		fprintf(stderr, "bar: LEAD name: %s\n", rpm->lead.name);
-		fprintf(stderr, "bar: LEAD major: %x minor: %x\n", rpm->lead.major, rpm->lead.minor);
-		fprintf(stderr, "bar: LEAD type: %x\n", ntohs(rpm->lead.type));
-		if(ntohs(rpm->lead.archnum) <= ARCHNUM__MAX)
-			fprintf(stderr, "bar: LEAD archnum: %s\n", table_archnum[ntohs(rpm->lead.archnum)].name);
-		else
-			fprintf(stderr, "bar: LEAD archnum: %x\n", ntohs(rpm->lead.archnum));
-		if(ntohs(rpm->lead.osnum) <= OSNUM__MAX)
-			fprintf(stderr, "bar: LEAD osnum: %s\n", table_osnum[ntohs(rpm->lead.osnum)].name);
-		else
-			fprintf(stderr, "bar: LEAD osnum: %x\n", ntohs(rpm->lead.osnum));
-		fprintf(stderr, "bar: LEAD signature_type: %x\n", ntohs(rpm->lead.signature_type));
-	}
-
-	return 0;
 }
 
 static int rpm_lead_write(int fd, struct rpm *rpm)
@@ -713,8 +149,8 @@ static int rpm_lead_write(int fd, struct rpm *rpm)
 static int rpm_payload_write(int fd, struct rpm *rpm, struct jlhead *files)
 {
 	struct zstream z;
-	struct file *f;
-	struct file trailer;
+	struct cpio_file *f;
+	struct cpio_file trailer;
 	ssize_t n;
 	int zfd;
 	
@@ -724,7 +160,7 @@ static int rpm_payload_write(int fd, struct rpm *rpm, struct jlhead *files)
 	z.open(&z, zfd, "w");
 	jl_foreach(files, f) {
 		if(conf.verbose) printf("%s\n", f->normalized_name);
-		if((n=cpio_write(&z, f, rpm)) == -1) {
+		if((n=cpio_write(&conf.log, &z, f, &rpm->sumsize)) == -1) {
 			fprintf(stderr, "bar: Error writing cpio header\n");
 			return -1;
 		}
@@ -734,7 +170,7 @@ static int rpm_payload_write(int fd, struct rpm *rpm, struct jlhead *files)
 	trailer.name = "TRAILER!!!";
 	trailer.normalized_name = "TRAILER!!!";
 	trailer.cpio_name = "TRAILER!!!";
-	if((n=cpio_write(&z, &trailer, rpm)) == -1) {
+	if((n=cpio_write(&conf.log, &z, &trailer, &rpm->sumsize)) == -1) {
 		fprintf(stderr, "bar: Error writing cpio header for trailer\n");
 		return -1;
 	}
@@ -980,354 +416,6 @@ static int rpm_header_write(int fd, struct rpm *rpm)
 	return rc;
 }
 
-static int rpm_sig_read(int fd, struct rpm *rpm)
-{
-	int i;
-	char *store;
-	struct indexentry *entry;
-	struct tag *tag;
-	struct jlhead *entries;
-	if(conf.verbose > 1) fprintf(stderr, "bar: Reading signature sized %d bytes\n", sizeof(struct header));
-	entries = jl_new();
-	
-	if(read(fd, &rpm->sig, sizeof(struct header))!= sizeof(struct header)) {
-		fprintf(stderr, "bar: Failed to read signature header\n");
-                return -1;
-	}
-	if((ntohl(rpm->sig.magic) >> 8) !=HEADERMAGIC) {
-		fprintf(stderr, "bar: Incorrect rpm-header magic in signature.\n");
-		if(conf.verbose) {
-			fprintf(stderr, "bar: Magic was: %x, should be %x\n",
-				(ntohl(rpm->sig.magic) >> 8),
-				HEADERMAGIC);
-		}
-                return -1;
-        }
-	
-	if(conf.verbose > 2) fprintf(stderr, "bar: Reading index sized %d bytes\n",
-				     sizeof(struct indexentry)*ntohl(rpm->sig.entries));
-	for(i=0;i<ntohl(rpm->sig.entries);i++) {
-		entry = malloc(sizeof(struct indexentry));
-		if(!entry) {
-			fprintf(stderr, "bar: Failed to allocate memory for indexentry %d.\n", i);
-                        return -1;
-		}
-		if(read(fd, entry, sizeof(struct indexentry)) != sizeof(struct indexentry)) {
-			fprintf(stderr, "bar: Failed to read indexentry %d.\n", i);
-			return -1;
-		}
-		jl_append(entries, entry);
-	}
-	
-	store = malloc(ntohl(rpm->sig.size));
-	if(!store) {
-		fprintf(stderr, "bar: Failed to allocate memory for store\n");
-		return -1;
-	}
-	
-	i = (ntohl(rpm->sig.size)+7)&~0x7; /* adjust to even 8-byte boundary */
-	if(conf.verbose > 1) fprintf(stderr, "bar: Aligned %d to %d\n", ntohl(rpm->sig.size), i);
-	if(conf.verbose > 1) fprintf(stderr, "bar: Reading store sized %d bytes\n", i);
-	if(read(fd, store, i)!=i) {
-		fprintf(stderr, "bar: Failed to read signature store\n");
-		return -1;
-	}
-
-	/*
-	 * Set the header offset.
-	 * If we want to verify the MD5 signature, we need to seek back here later.
-	 */
-	rpm->headeroffset = lseek(fd, 0, SEEK_CUR);
-	
-	jl_foreach(entries, entry) {
-		char buf[2048];
-
-		if(conf.verbose > 3)
-			fprintf(stderr, "bar: Entry: %d [%s] type: %s offset: %d count: %d\n",
-				ntohl(entry->tag), sigstr(ntohl(entry->tag)),
-				hdrtypestr(ntohl(entry->type)), ntohl(entry->offset), ntohl(entry->count));
-
-		tag = malloc(sizeof(struct tag));
-		if(!tag) {
-			fprintf(stderr, "bar: Failed to allocate memory for tag\n");
-			return -1;
-		}
-		memset(tag, 0, sizeof(struct tag));
-		tag->tag = ntohl(entry->tag);
-		tag->type = ntohl(entry->type);
-		if(ntohl(entry->count) >= ((sizeof(buf)-2)/2)) {
-			fprintf(stderr, "bar: Signature entry too large: %d. max %d allowed\n", ntohl(entry->count),
-				(sizeof(buf)-2)/2);
-			entry->count = htonl((sizeof(buf)-2)/2);
-		}
-		if(ntohl(entry->type) == HDRTYPE_BIN) {
-			unsigned char *p;
-			char *b;
-			b = buf;
-			for(p=(unsigned char*) store + ntohl(entry->offset);
-			    p<(unsigned char*)(store + ntohl(entry->offset)+ntohl(entry->count));
-			    p++) {
-				sprintf(b, "%02x", *p);
-				b+=2;
-			}
-			tag->value = strdup(buf);
-		}
-		if(ntohl(entry->type) == HDRTYPE_STRING) {
-			tag->value = strdup(store + ntohl(entry->offset));
-		}
-		if(ntohl(entry->type) == HDRTYPE_STRARRAY) {
-			char *b, *p;
-			int n, len=0;
-                        b = buf;
-			p = store + ntohl(entry->offset);
-			for(i=0;i<ntohl(entry->count);i++) {
-				n = strlen(p);
-				len += n;
-				len++;
-				p += n;
-				p++;
-			}
-			tag->value=malloc(len+1);
-			if(!tag->value) {
-				fprintf(stderr, "bar: Failed to allocate memory for tag value\n");
-				return -1;
-			}
-			b = tag->value;
-			p = store + ntohl(entry->offset);
-			for(i=0;i<ntohl(entry->count);i++) {
-				n = sprintf(b, "%s\n", p);
-				b += n;
-				p += (n-1);
-				p++;
-			}
-		}
-		if(ntohl(entry->type) == HDRTYPE_I18NSTRING) {
-			tag->value = strdup(store + ntohl(entry->offset));
-		}
-		if(ntohl(entry->type) == HDRTYPE_INT32) {
-			sprintf(buf, "%d", ntohl(*(int32_t*)(store + ntohl(entry->offset))));
-			tag->value = strdup(buf);
-		}
-		if(tag->value) jl_append(rpm->sigtags, tag);
-	}
-	
-	if(conf.verbose > 2) 
-		jl_foreach(rpm->sigtags, tag) {
-			fprintf(stderr, "bar: Sigtag: %d [%s] type: %s value: %s\n", tag->tag, sigstr(tag->tag), hdrtypestr(tag->type), tag->value);
-		}
-	
-	return 0;
-}
-
-static int rpm_header_read(int fd, struct rpm *rpm)
-{
-	int i;
-	char *store;
-	struct indexentry *entry;
-	struct tag *tag;
-	struct jlhead *entries;
-	char *buf;
-	size_t bufsize = 2048;
-
-	if(conf.verbose > 1) fprintf(stderr, "bar: Reading header sized %d\n", sizeof(struct header));
-	entries = jl_new();
-
-	if(read(fd, &rpm->header, sizeof(struct header))!= sizeof(struct header)) {
-		fprintf(stderr, "bar: Failed to read rpm header\n");
-                return -1;
-	}
-	if((ntohl(rpm->header.magic) >> 8) != HEADERMAGIC) {
-		fprintf(stderr, "bar: Incorrect rpm-header magic in rpm header.\n");
-		if(conf.verbose) {
-			fprintf(stderr, "bar: Magic was: %x, should be %x\n",
-				(ntohl(rpm->sig.magic) >> 8),
-				HEADERMAGIC);
-		}
-                return -1;
-        }
-	
-	if(conf.verbose > 2) fprintf(stderr, "bar: Reading index sized %d\n",
-				     sizeof(struct indexentry)*ntohl(rpm->header.entries));
-	for(i=0;i<ntohl(rpm->header.entries);i++) {
-		entry = malloc(sizeof(struct indexentry));
-		if(!entry) {
-			fprintf(stderr, "bar: Failed to allocate memory for entry\n");
-			return -1;
-		}
-		if(read(fd, entry, sizeof(struct indexentry)) != sizeof(struct indexentry)) {
-			fprintf(stderr, "bar: Failed to read indexentries.\n");
-			return -1;
-		}
-		jl_append(entries, entry);
-	}
-	
-	store = malloc(ntohl(rpm->header.size));
-	if(!store) {
-		fprintf(stderr, "bar: Failed to allocate memory for store\n");
-		return -1;
-	}
-	
-	i = ntohl(rpm->header.size);
-	if(conf.verbose > 1) fprintf(stderr, "bar: Reading store sized %d\n", i);
-	if(read(fd, store, i)!=i) {
-		fprintf(stderr, "bar: Failed to read header store\n");
-		return -1;
-	}
-
-	/*
-	 * Set the payload offset.
-	 * We may later want to seek to this position to unpack the payload
-	 */
-	rpm->payloadoffset = lseek(fd, 0, SEEK_CUR);
-
-        buf = malloc(bufsize);
-	if(!buf) {
-		fprintf(stderr, "bar: Failed to allocate buffer for rpm header\n");
-		return -1;
-	}
-	
-	jl_foreach(entries, entry) {
-		if(conf.verbose > 3)
-			fprintf(stderr, "bar: Entry: %d [%s] type: %s offset: %d count: %d\n",
-				ntohl(entry->tag), tagstr(ntohl(entry->tag)),
-				hdrtypestr(ntohl(entry->type)), ntohl(entry->offset), ntohl(entry->count));
-		
-		tag = malloc(sizeof(struct tag));
-		if(!tag) {
-			fprintf(stderr, "bar: Failed to allocate buffer for tag\n");
-			return -1;
-		}
-		memset(tag, 0, sizeof(struct tag));
-		tag->tag = ntohl(entry->tag);
-		tag->type = ntohl(entry->type);
-
-		if(ntohl(entry->count) >= ((bufsize-2)/2)) {
-			char *newbuf;
-			if(ntohl(entry->count) < 1<<24) {
-				newbuf = malloc( (ntohl(entry->count)+2)*2);
-				if(newbuf) {
-					free(buf);
-					buf = newbuf;
-					bufsize = (ntohl(entry->count)+2)*2;
-				}
-			}
-		}
-
-		if(ntohl(entry->count) >= ((bufsize-2)/2)) {
-			fprintf(stderr, "bar: Header entry too large: %d. max %d allowed\n", ntohl(entry->count),
-				(bufsize-2)/2);
-			entry->count = htonl((bufsize-2)/2);
-		}
-
-		if(ntohl(entry->type) == HDRTYPE_BIN) {
-			unsigned char *p;
-			char *b;
-			b = buf;
-			for(p=(unsigned char*) store + ntohl(entry->offset);
-			    p<(unsigned char*)(store + ntohl(entry->offset)+ntohl(entry->count));
-			    p++) {
-				sprintf(b, "%02x", *p);
-				b+=2;
-			}
-			tag->value = strdup(buf);
-		}
-		if(ntohl(entry->type) == HDRTYPE_STRING) {
-			tag->value = strdup(store + ntohl(entry->offset));
-		}
-		if(ntohl(entry->type) == HDRTYPE_STRARRAY) {
-			char *b, *p;
-			int n, len=0;
-                        b = buf;
-			p = store + ntohl(entry->offset);
-			for(i=0;i<ntohl(entry->count);i++) {
-				n = strlen(p);
-				len += n;
-				len++;
-				p += n;
-				p++;
-			}
-			tag->value=malloc(len+1);
-			if(!tag->value) {
-				fprintf(stderr, "bar: Failed to allocate buffer for tag value\n");
-				return -1;
-			}
-			b = tag->value;
-			p = store + ntohl(entry->offset);
-			for(i=0;i<ntohl(entry->count);i++) {
-				n = sprintf(b, "%s", p);
-				b += n;
-				p += n;
-				if(i < ntohl(entry->count)-1) {
-					sprintf(b, "\n");
-					b++;
-				}
-				p++;
-			}
-		}
-		if(ntohl(entry->type) == HDRTYPE_I18NSTRING) {
-			tag->value = strdup(store + ntohl(entry->offset));
-			if(!tag->value) {
-                                fprintf(stderr, "bar: Failed to allocate buffer for tag value\n");
-                                return -1;
-                        }
-		}
-		if(ntohl(entry->type) == HDRTYPE_INT32) {
-			char *b, *p;
-			int n;
-			tag->value = malloc(ntohl(entry->count) * 12);
-			if(!tag->value) {
-                                fprintf(stderr, "bar: Failed to allocate buffer for tag value\n");
-                                return -1;
-                        }
-			b = tag->value;
-			p = store + ntohl(entry->offset);
-			for(i=0;i<ntohl(entry->count);i++) {
-				n = sprintf(b, "%d", ntohl(*(int32_t*)p));
-				b += n;
-				if(i < ntohl(entry->count)-1) {
-                                        sprintf(b, "\n");
-                                        b++;
-                                }
-				p += sizeof(int32_t);
-			}
-		}
-		if(ntohl(entry->type) == HDRTYPE_INT16) {
-			char *b, *p;
-			int n;
-			tag->value = malloc(ntohl(entry->count) * 7);
-			if(!tag->value) {
-                                fprintf(stderr, "bar: Failed to allocate buffer for tag value\n");
-                                return -1;
-                        }
-			b = tag->value;
-			p = store + ntohl(entry->offset);
-			for(i=0;i<ntohl(entry->count);i++) {
-				n = sprintf(b, "%hu", ntohs(*(int16_t*)p));
-				b += n;
-				if(i < ntohl(entry->count)-1) {
-                                        sprintf(b, "\n");
-                                        b++;
-                                }
-				p += sizeof(int16_t);
-			}
-		}
-		if(tag->value) jl_append(rpm->tags, tag);
-		else {
-			if(conf.verbose) {
-				fprintf(stderr, "bar: Skipping tag %d of unknown type: %d\n", tag->tag, ntohl(entry->type));
-			}
-		}
-	}
-	
-	if(conf.verbose > 2 || conf.printtag) 
-		jl_foreach(rpm->tags, tag) {
-			if(conf.verbose > 2 || conf.printtag == tag->tag)
-				fprintf(stderr, "bar: Tag: %d [%s] type: %s value: %s\n", tag->tag, tagstr(tag->tag), hdrtypestr(tag->type), tag->value);
-		}
-	free(buf);
-	return 0;
-}
-
 static int rpm_sig_rewrite(int fd, struct rpm *rpm)
 {
 	uint32_t val;
@@ -1391,79 +479,12 @@ static int rpm_sig_rewrite(int fd, struct rpm *rpm)
 	return 0;
 }
 
-
-struct jlhead *rpm_read_filenames(struct rpm *rpm)
-{
-	struct jlhead *l = jl_new();
-	const char *names = tag(rpm, RPMTAG_FILENAMES, (void*)0);
-	const char *dirindexes, *dirnames;
-	
-	/* the old simple way. plain filenames in a list */
-	if(names) {
-		const char *p=names;
-		char *n;
-		while(p && *p) {
-			n = strchr(p, '\n');
-			if(n) jl_append(l, strndup(p, n-p));
-			if(!n) {
-				jl_append(l, strdup(p));
-				break;
-			}
-			p = n+1;
-		}
-		return l;
-	}
-	
-	names = tag(rpm, RPMTAG_BASENAMES, (void*)0);
-	if(!names) {
-		fprintf(stderr, "bar: header lacks filenames\n");
-		return l;
-	}
-	dirindexes = tag(rpm, RPMTAG_DIRINDEXES, (void*)0);
-	if(!dirindexes) {
-		fprintf(stderr, "bar: header lacks DIRINDEXES\n");
-		return l;
-	}
-	dirnames = tag(rpm, RPMTAG_DIRNAMES, (void*)0);
-	if(!dirnames) {
-		fprintf(stderr, "bar: header lacks DIRNAMES\n");
-		return l;
-	}
-
-	{
-		const char *d=dirindexes;
-		const char *p=names;
-		char *nd, *np;
-		char *name, *dir;
-		int i;
-		while(d && p && *d && *p) {
-			nd = strchr(d, '\n');
-			np = strchr(p, '\n');
-			i = atoi(d);
-			dir = stratindex(dirnames, i);
-			name = malloc(strlen(dir)+(np?np-p:strlen(p))+1);
-			if(!name) {
-				fprintf(stderr, "bar: Failed to allocate memory for filename\n");
-				return NULL;
-			}
-			strcpy(name, dir);
-			free(dir);
-			strncat(name, p, np?np-p:strlen(p));
-			jl_append(l, name);
-			if(!np) break;
-			p = np+1;
-			d = nd+1;
-		}
-	}
-	return l;
-}
-
 static int bar_create(const char *archive, struct jlhead *files, int *err)
 {
 	int fd;
 	struct rpm *rpm;
 	struct tag *tag;
-	struct file *f;
+	struct cpio_file *f;
 	char *p;
 	
 	rpm = rpm_new();
@@ -1841,384 +862,15 @@ static int bar_create(const char *archive, struct jlhead *files, int *err)
 	return 0;
 }
 
-static int bar_extract(const char *archive, struct jlhead *files, int *err)
-{
-	int fd;
-	struct rpm *rpm;
-	struct jlhead *filenames;
-	
-	*err = 0;
-
-	rpm = rpm_new();
-	fd = open(archive, O_RDONLY);
-	if(fd == -1) return -1;
-	
-	if(rpm_lead_read(fd, rpm)) return -1;
-	if(rpm_sig_read(fd, rpm)) return -1;
-
-	/* verify MD5 signature */
-	if(!conf.ignore_chksum)	{
-		ssize_t n;
-		unsigned char buf[1024];
-		struct digest d;
-
-		if(digest(&d, "md5")) {
-                        fprintf(stderr, "bar: MD5Init failed.\n");
-                        return -1;
-                }
-		while(1) {
-                        n = read(fd, buf, sizeof(buf));
-                        if(n < 1) break;
-                        d.update(&d, buf, n);
-                }
-		d.final(&d);
-		if(strcmp(sig(rpm, SIGTAG_MD5), d.hexstr)) {
-			fprintf(stderr, "bar: MD5sum verification failed: %s %s\n", sig(rpm, SIGTAG_MD5), d.hexstr);
-			return -1;
-		} else {
-			if(conf.verbose > 2)
-				fprintf(stderr, "bar: MD5sum verification succeeded.\n");
-		}
-		
-	}
-	
-	/* rewind to start of header */
-	if(lseek(fd, rpm->headeroffset, SEEK_SET)==-1) {
-		fprintf(stderr, "bar: Failed to seek to pos %ju\n", rpm->headeroffset);
-	}
-	
-	if(rpm_header_read(fd, rpm)) return -1;
-
-	if(conf.info) {
-		printf("name=%s\n", tag(rpm, RPMTAG_NAME, ""));
-		printf("version=%s\n", tag(rpm, RPMTAG_VERSION, ""));
-		printf("release=%s\n", tag(rpm, RPMTAG_RELEASE, ""));
-		printf("os=%s\n", tag(rpm, RPMTAG_OS, ""));
-		printf("arch=%s\n", tag(rpm, RPMTAG_ARCH, ""));
-		printf("license=%s\n", tag(rpm, RPMTAG_COPYRIGHT, ""));
-		printf("size=%s\n", tag(rpm, RPMTAG_SIZE, ""));
-		return 0;
-	}
-
-	if(strcmp(tag(rpm, RPMTAG_PAYLOADFORMAT, "cpio"), "cpio")) {
-		fprintf(stderr, "bar: Unsupported payload format '%s'\n", tag(rpm, RPMTAG_PAYLOADFORMAT, ""));
-		return -1;
-	}
-	
-	rpm->compressor = (void*) 0;
-	if(strcmp(tag(rpm, RPMTAG_PAYLOADCOMPRESSOR, ""), "xz") == 0)
-		rpm->compressor = "xz";
-	if(strcmp(tag(rpm, RPMTAG_PAYLOADCOMPRESSOR, "gzip"), "gzip") == 0)
-		rpm->compressor = "gzip";
-
-	if(!rpm->compressor) {
-		fprintf(stderr, "bar: Unsupported payload compressor '%s'\n", tag(rpm, RPMTAG_PAYLOADCOMPRESSOR, ""));
-		return -1;
-	}
-
-	rpm->digestalgo = "md5";
-	/* See for algo numbers https://tools.ietf.org/html/rfc4880#section-9.4 */
-	if(strcmp(tag(rpm, RPMTAG_FILEDIGESTALGO, ""), "8") == 0)
-		rpm->digestalgo = "sha256";
-	
-	if(conf.verbose > 2) fprintf(stderr, "bar: Using digest algorithm: %s\n", rpm->digestalgo);
-	
-	/* retrieve filenames; they might be encoded in two different ways */
-	filenames = rpm_read_filenames(rpm);
-
-	{
-		struct zstream z;
-		struct cpio_host cpio;
-		int n, ofd=-1;
-		char buf[4096];
-		int selected;
-		char *filemd5 = (void*)0;
-		char *tmpname = (void*)0;
-		
-		rpm->uncompressed_size = 0;
-		
-		if(zstream(&z, rpm->compressor)) {
-			fprintf(stderr, "bar: unsupported compressor %s\n", rpm->compressor);
-			return -1;
-		}
-		z.init(&z);
-		if(z.open(&z, dup(fd), "r")) {
-			fprintf(stderr, "bar: open of compressed payload failed\n");
-			return -1;
-		}
-		while(1) {
-			selected=0;
-			if(cpio_read(&z, &cpio)) {
-				fprintf(stderr, "bar: Error reading cpio header\n");
-				return -1;
-			}
-			rpm->uncompressed_size += cpio.uncompressed_size;
-			
-			if(strcmp(cpio.name, "TRAILER!!!")==0)
-				break;
-			if(files->len == 0) selected=1;
-			else {
-				struct file *f;
-				jl_foreach(files, f) {
-					if(!strcmp(f->name, cpio.name)) {
-						selected=1;
-						break;
-					}
-				}
-			}
-
-			{
-				int fileindex = 0;
-				char *name;
-				filemd5 = (void*)0;
-				if(!conf.ignore_chksum) {
-					jl_foreach(filenames, name) {
-						if(strcmp(name, normalize_name(cpio.name))==0) {
-							filemd5 = stratindex(tag(rpm, RPMTAG_FILEMD5S, (void*)0), fileindex);
-							break;
-						}
-						fileindex++;
-					}
-				}
-			}
-			
-			if(selected && (conf.list || conf.verbose)) {
-				if(conf.verbose) {
-					/* mode nlink uid gid size date filename */
-					struct tm tm;
-					time_t t = cpio.c_mtime;
-					localtime_r(&t, &tm);
-					strftime(buf, sizeof(buf), "%F %T", &tm);
-					if(conf.pkginfo)
-						printf("%s\t%llu\t%s\t%s\n",
-						       cpio.mode, cpio.c_filesize, filemd5?filemd5:"-", cpio.name);
-					else
-						printf("%-8o %4d %6d %6d %9llu %9s %s\n",
-						       cpio.c_mode, cpio.c_nlink, cpio.c_uid, cpio.c_gid,
-						       cpio.c_filesize, buf, cpio.name);
-				} else
-					printf("%s\n", cpio.name);
-			}
-			if(selected && (!conf.list)) {
-				if(mkpath(cpio.name)) {
-					fprintf(stderr, "bar: Failed to create filesystem path for %s\n", cpio.name);
-					return -1;
-				}
-				if(!strcmp(cpio.mode,"l")) {
-					char *path;
-					path = malloc(cpio.c_filesize_a);
-					if(!path) {
-						fprintf(stderr, "bar: Failed to alloc link content memory for %s\n", cpio.name);
-						return -1;
-					}
-					if(conf.verbose > 1) {
-						if(cpio.c_filesize_a) {
-							fprintf(stderr, "bar: Reading %llu bytes of link contents for %s\n",
-								cpio.c_filesize_a, cpio.name);
-						}
-					}
-					n = z.read(&z, path, cpio.c_filesize_a);
-					if(n != cpio.c_filesize_a) {
-						fprintf(stderr, "bar: Failed to read symlink for: %s\n", cpio.name);
-						return -1;
-					}
-					rpm->uncompressed_size += n;
-					unlink(cpio.name);
-					symlink(path, cpio.name);
-					free(path);
-					/* set size to zero, so it wont be read later */
-					cpio.c_filesize_a = cpio.c_filesize = 0;
-				}
-				if(!strcmp(cpio.mode,"f")) {
-					size_t tmplen = strlen(cpio.name)+64;
-					struct timespec tp;
-					if(clock_gettime(CLOCK_MONOTONIC, &tp)) {
-						tp.tv_nsec = time(0);
-					}
-					tmpname = malloc(tmplen);
-					if(!tmpname) {
-						fprintf(stderr, "bar: Failed to alloc tmpname for %s\n", cpio.name);
-						return -1;
-					}
-					snprintf(tmpname, tmplen, "%s.tmp.%u.%ld", cpio.name, getpid(), tp.tv_nsec);
-					tmpname[tmplen-1] = 0;
-					if(!ftest(tmpname, 0777777)) {
-						if(unlink(tmpname)) {
-							fprintf(stderr, "bar: Failed to unlink tmp file %s\n", tmpname);
-							return -1;
-						}
-					}
-					ofd = open(tmpname, O_WRONLY|O_CREAT|O_TRUNC, 0755);
-					if(ofd == -1) {
-						fprintf(stderr, "bar: Failed to create file %s\n", tmpname);
-						if(tmpname) rename(tmpname, cpio.name);
-						return -1;
-					}
-				}
-				if(!strcmp(cpio.mode,"c")) {
-					if(!ftest(cpio.name, S_IFCHR)) {
-						struct stat statb;
-						
-						if(lstat(cpio.name, &statb)==0) {
-							if(statb.st_rdev != cpio.rdev)
-								unlink(cpio.name);
-						}
-					}
-					if(ftest(cpio.name, S_IFCHR)) {
-						mknod(cpio.name, cpio.c_mode, cpio.rdev);
-					}
-				}
-				if(!strcmp(cpio.mode,"b")) {
-					if(!ftest(cpio.name, S_IFBLK)) {
-						struct stat statb;
-						
-						if(lstat(cpio.name, &statb)==0) {
-							if(statb.st_rdev != cpio.rdev)
-								unlink(cpio.name);
-						}
-					}
-					if(ftest(cpio.name, S_IFCHR)) {
-						mknod(cpio.name, cpio.c_mode, cpio.rdev);
-					}
-				}
-				if(!strcmp(cpio.mode,"d"))
-					if(ftest(cpio.name, S_IFDIR)) {
-						if(mkdir(cpio.name, 0755)) {
-							fprintf(stderr, "bar: Failed to create directory %s\n",
-								cpio.name);
-							return -1;
-						}
-					}
-				if(chmod(tmpname?tmpname:cpio.name, cpio.c_mode & 07777)) {
-					fprintf(stderr, "bar: Failed to set mode of %s\n", tmpname?tmpname:cpio.name);
-					*err=1;
-				}
-				if(chown(tmpname?tmpname:cpio.name, cpio.c_uid, cpio.c_gid)) {
-					fprintf(stderr, "bar: Failed to set owner of %s\n", tmpname?tmpname:cpio.name);
-					*err=1;
-				}
-
-				{
-					struct timeval tv[2];
-					tv[0].tv_sec = cpio.c_mtime;
-					tv[0].tv_usec = 0;
-					tv[1].tv_sec = cpio.c_mtime;
-					tv[1].tv_usec = 0;
-					if(lutimes(tmpname?tmpname:cpio.name, tv)) {
-						fprintf(stderr, "bar: Failed to set mtime of %s\n", tmpname?tmpname:cpio.name);
-						*err=1;
-					}
-				}
-
-			}
-			if(conf.verbose > 1) {
-				if(cpio.c_filesize_a) {
-					fprintf(stderr, "bar: Reading %llu bytes of file contents for %s\n",
-						cpio.c_filesize_a, cpio.name);
-				}
-			}
-
-			{
-				uint64_t actualsize;
-				struct digest d;
-
-				if(digest(&d, rpm->digestalgo)) {
-					fprintf(stderr, "bar: Digest init failed for algorith: %s\n", rpm->digestalgo);
-					return -1;
-				}
-				
-				if(filemd5 && (conf.verbose > 2)) {
-					if(filemd5)
-						fprintf(stderr, "bar: md5sum of %s should be %s\n", cpio.name, filemd5);
-				}
-				
-				actualsize = cpio.c_filesize;
-				while(actualsize) {
-					n = z.read(&z, buf, actualsize < sizeof(buf) ? actualsize : sizeof(buf));
-					if(n <= 0) break;
-					
-					if(!conf.ignore_chksum) d.update(&d, buf, n);
-					
-					rpm->uncompressed_size += n;
-					if(ofd >= 0) {
-						if(write(ofd, buf, n)==-1) {
-							fprintf(stderr, "bar: error writing to %s: %s\n", tmpname, strerror(errno));
-							close(ofd);
-							unlink(tmpname);
-							return -1;
-						}
-					}
-					cpio.c_filesize_a -= n;
-					actualsize -= n;
-				}
-				while(cpio.c_filesize_a) {
-					n = z.read(&z, buf, cpio.c_filesize_a < sizeof(buf) ? cpio.c_filesize_a : sizeof(buf));
-                                        if(n <= 0) break;
-					cpio.c_filesize_a -= n;
-				}
-				d.final(&d);
-				if(!conf.ignore_chksum) {
-					if(conf.verbose > 2)
-						fprintf(stderr, "bar: md5sum calculated to %s\n", d.hexstr);
-					if(filemd5) {
-						if(!strcmp(cpio.mode,"f") && strcmp(d.hexstr, filemd5)) {
-							fprintf(stderr, "bar: md5sum mismatch of file %s\n", cpio.name);
-							return -1;
-						}
-					}
-				}
-				if(filemd5) free(filemd5);
-			}
-			if(ofd >= 0) {
-				struct timeval tv[2];
-				ftruncate(ofd, cpio.c_filesize);
-				tv[0].tv_sec = cpio.c_mtime;
-				tv[0].tv_usec = 0;
-				tv[1].tv_sec = cpio.c_mtime;
-				tv[1].tv_usec = 0;
-				if(futimes(ofd, tv)) {
-					fprintf(stderr, "bar: Failed to set mtime of %s\n", tmpname);
-                                        *err=1;
-				}
-				if(conf.sync && fsync(ofd)) {
-					fprintf(stderr, "bar: fsync failed for %s\n", tmpname);
-					close(fd);
-					return -1;
-				}
-				if(close(ofd)) {
-					fprintf(stderr, "bar: failed closing file %s after writing\n", tmpname);
-					/* try to clean up the tmp-file atleast */
-					unlink(tmpname);
-					return -1;
-				}
-				if(rename(tmpname, cpio.name)) {
-					fprintf(stderr, "bar: failed to rename %s to %s\n", tmpname, cpio.name);
-					return -1;
-				}
-				ofd=-1;
-				free(tmpname);
-				tmpname = (void*)0;
-			}
-		}
-		z.close(&z);
-	}
-
-	if(conf.verbose > 1) {
-		fprintf(stderr, "bar: Uncompressed size of payload: %zu\n", rpm->uncompressed_size);
-	}
-	
-	return 0;
-}
-
 static int file_new(struct jlhead *files, const char *fn, int create, int recursive)
 {
-	struct file *f;
+	struct cpio_file *f;
 	int fd;
 	ssize_t n;
 	unsigned char buf[PATH_MAX];
 	struct digest d;
 	
-	f = malloc(sizeof(struct file));
+	f = malloc(sizeof(struct cpio_file));
 	if(!f) {
 		fprintf(stderr, "bar: failed to malloc memory: ");
 		fprintf(stderr, "%s\n", fn);
@@ -2251,15 +903,15 @@ static int file_new(struct jlhead *files, const char *fn, int create, int recurs
 		fprintf(stderr, "bar: processing file %s\n", f->name);
 	}
 
-	if(conf.prefix) {
+	if(conf.opt.prefix) {
 		char *p;
-		p = malloc(strlen(conf.prefix)+strlen(f->normalized_name)+1);
+		p = malloc(strlen(conf.opt.prefix)+strlen(f->normalized_name)+1);
 		if(!p) {
 			fprintf(stderr, "bar: failed to malloc memory for prefixed filename: ");
 			fprintf(stderr, "%s\n", f->name);
 			return -1;
 		}
-		strcpy(p, conf.prefix);
+		strcpy(p, conf.opt.prefix);
 		strcat(p, f->normalized_name);
 		f->normalized_name = p;
 	}
@@ -2408,7 +1060,38 @@ static int file_new(struct jlhead *files, const char *fn, int create, int recurs
 
 int sort_files(const void *a, const void *b)
 {
-	return strcmp(((struct file*)a)->normalized_name, ((struct file*)b)->normalized_name);
+	return strcmp(((struct cpio_file*)a)->normalized_name, ((struct cpio_file*)b)->normalized_name);
+}
+
+
+int barlog_pre()
+{
+	return fprintf(stderr, "bar: ");
+}
+
+int barlog_post()
+{
+	return fprintf(stderr, "\n");
+}
+
+int barlog_log(const char *fmt, ...)
+{
+	va_list ap;
+	va_start(ap, fmt);
+	
+	return vfprintf(stderr, fmt, ap);
+}
+
+int barlog_logln(const char *fmt, ...)
+{
+	int n;
+	va_list ap;
+	va_start(ap, fmt);
+	
+	n = barlog_pre();
+	n += vfprintf(stderr, fmt, ap);
+	n += barlog_post();
+	return n;
 }
 
 int main(int argc, char **argv)
@@ -2421,14 +1104,14 @@ int main(int argc, char **argv)
 	jl_sort(files, sort_files);
 	
 	i=256;
-	conf.cwd = malloc(i);
-	while(!getcwd(conf.cwd, i)) {
+	conf.opt.cwd = malloc(i);
+	while(!getcwd(conf.opt.cwd, i)) {
 		i = i*2;
-		conf.cwd = realloc(conf.cwd, i);
-		if(!conf.cwd) exit(2);
+		conf.opt.cwd = realloc(conf.opt.cwd, i);
+		if(!conf.opt.cwd) exit(2);
 	}
 
-	conf.prefix = 0;
+	conf.opt.prefix = 0;
 	
 	{
 		struct utsname buf;
@@ -2471,7 +1154,7 @@ int main(int argc, char **argv)
 	}
 
 	conf.quotechar = '%';
-	conf.sync = 1;
+	conf.opt.sync = 1;
 	
 	if(jelopt(argv, 0, "examples", 0, &err)) {
 		printf("Examples: \n"
@@ -2540,8 +1223,8 @@ int main(int argc, char **argv)
 	}
 	while(jelopt(argv, 'r', "recursive", 0, &err)) conf.recursive=1;
 	while(jelopt(argv, 'c', "create", 0, &err)) conf.create=1;
-	while(jelopt(argv, 'i', "info", 0, &err)) conf.extract=conf.info=1;
-	while(jelopt(argv, 'l', "list", 0, &err)) conf.extract=conf.list=1;
+	while(jelopt(argv, 'i', "info", 0, &err)) conf.extract=conf.opt.info=1;
+	while(jelopt(argv, 'l', "list", 0, &err)) conf.extract=conf.opt.list=1;
 	while(jelopt(argv, 'x', "extract", 0, &err)) conf.extract=1;
 	while(jelopt(argv, 'v', "verbose", 0, &err)) conf.verbose++;
 	while(jelopt(argv, 'V', "verify", 0, &err)) conf.verify=1;
@@ -2569,16 +1252,22 @@ int main(int argc, char **argv)
 		conf.tag.group = dequote(conf.tag.group);
 	while(jelopt(argv, 0, "summary", &conf.tag.summary, &err))
 		conf.tag.summary = dequote(conf.tag.summary);
-	while(jelopt(argv, 0, "pkginfo", NULL, &err)) conf.pkginfo=conf.verbose=1;
-	while(jelopt_int(argv, 0, "printtag", &conf.printtag, &err));
-	while(jelopt(argv, 0, "nosum", NULL, &err)) conf.ignore_chksum=1;
-	while(jelopt(argv, 0, "nosync", NULL, &err)) conf.sync=0;
-	while(jelopt(argv, 0, "prefix", &conf.prefix, &err)) {
-		int len = strlen(conf.prefix);
+	while(jelopt(argv, 0, "pkginfo", NULL, &err)) conf.opt.pkginfo=conf.verbose=1;
+	while(jelopt_int(argv, 0, "printtag", &conf.opt.printtag, &err));
+	while(jelopt(argv, 0, "nosum", NULL, &err)) conf.opt.ignore_chksum=1;
+	while(jelopt(argv, 0, "nosync", NULL, &err)) conf.opt.sync=0;
+	while(jelopt(argv, 0, "prefix", &conf.opt.prefix, &err)) {
+		int len = strlen(conf.opt.prefix);
 		if(len)
-			if(conf.prefix[len-1] == '/')
-				conf.prefix[len-1] = 0;
+			if(conf.opt.prefix[len-1] == '/')
+				conf.opt.prefix[len-1] = 0;
 	}
+
+	conf.log.level = conf.verbose;
+	conf.log.pre = &barlog_pre;
+	conf.log.post = &barlog_post;
+	conf.log.log = &barlog_log;
+	conf.log.logln = &barlog_logln;
 	
 	argc = jelopt_final(argv, &err);
 	if(err) {
@@ -2629,7 +1318,7 @@ int main(int argc, char **argv)
 	
 	if(conf.extract) {
 		err=0;
-		if(bar_extract(archive, files, &err)) {
+		if(bar_extract(&conf.log, archive, files, &err, &conf.opt)) {
 			fprintf(stderr, "bar: '%s' extract failed\n", archive);
 			exit(1);
 		}

@@ -1,3 +1,9 @@
+#ifndef BAR_RPM_H
+#define BAR_RPM_H
+
+#include <sys/types.h>
+#include <unistd.h>
+
 /* http://rpm.org/max-rpm/s1-rpm-file-format-rpm-file-format.html */
 
 #define RPMMAGIC 0xedabeedb
@@ -17,32 +23,6 @@ struct rpmlead {
 
 struct canon {
   const char *name;
-};
-
-static struct canon table_osnum[] = { 
-  { "" },
-  { "LINUX" },
-  { "IRIX" },
-  { "SOLARIS" },
-  { "SUNOS" },
-  { "AIX" },
-  { "HPUX10" },
-  { "OSF1" },
-  { "FREEBSD" },
-  { "SCO" },
-  { "IRIX64" },
-  { "NEXTSTEP" },
-  { "BSDI" },
-  { "MACHTEN" },
-  { "CYGWIN32_NT" },
-  { "CYGWIN32_95" },
-  { "MP_RAS" },
-  { "MINT" },
-  { "OS390" },
-  { "VM_ESA" },
-  { "LINUX_390" },
-  { "MACOSX" },
-  { NULL }
 };
 
 #define OSNUM_LINUX 1
@@ -68,29 +48,6 @@ static struct canon table_osnum[] = {
 #define OSNUM_MACOSX 21
 
 #define OSNUM__MAX 21
-
-static struct canon table_archnum[] = { 
-  { "" },
-  { "X86" },
-  { "ALPHA" },
-  { "SPARC" },
-  { "MIPS" },
-  { "PPC" },
-  { "M68K" },
-  { "SGI" },
-  { "RS6000" },
-  { "IA64" },
-  { "" },
-  { "MIPSEL" },
-  { "ARM" },
-  { "M68KMINT" },
-  { "S390" },
-  { "S390X" },
-  { "PPC64" },
-  { "SH" },
-  { "XTENSA" },
-  { NULL }
-};
 
 #define ARCHNUM_X86 1
 #define ARCHNUM_ALPHA 2
@@ -286,3 +243,47 @@ struct indexentry {
 #define RPMTAG_FILEDEPENDSN          1144 /* i[] */
 #define RPMTAG_DEPENDSDICT           1145
 #define RPMTAG_FILEDIGESTALGO        5011
+
+struct tag {
+	int tag;
+	int type;
+	int track;
+	int count;
+	int size;
+	char *value;
+};
+
+struct rpm {
+	struct rpmlead lead;
+	struct header sig;
+	struct jlhead *sigtags;
+	struct header header;
+	struct jlhead *tags;
+	off_t headeroffset;
+	off_t payloadoffset;
+	off_t eofoffset;
+	size_t uncompressed_size;
+	size_t sumsize;
+
+	char *compressor, *digestalgo;
+	
+	/* offsets to sigtag values that can only be written after the whole payload is generated */
+	off_t sigtag_md5sum;
+	off_t sigtag_size;	
+	off_t sigtag_payloadsize;
+
+	/* offsets within header */
+	off_t rpmtag_size;
+};
+
+struct bar_options {
+  int info,pkginfo,sync,list;
+  int ignore_chksum;
+  int printtag;
+  char *prefix;
+  char *cwd;
+};
+
+struct rpm *rpm_new();
+
+#endif
