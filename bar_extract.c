@@ -277,6 +277,8 @@ static const char *tagstr(int t)
 		return "RPMTAG_FILERDEVS";
 	case RPMTAG_FILEMD5S:
 		return "RPMTAG_FILEMD5S";
+	case RPMTAG_SOURCERPM:
+		return "RPMTAG_SOURCERPM";
 	case RPMTAG_DIRINDEXES:
 		return "RPMTAG_DIRINDEXES";
 	case RPMTAG_BASENAMES:
@@ -793,6 +795,7 @@ int bar_extract(const struct logcb *log, const char *archive, struct jlhead *fil
 		printf("os=%s\n", tag(rpm, RPMTAG_OS, ""));
 		printf("arch=%s\n", tag(rpm, RPMTAG_ARCH, ""));
 		printf("license=%s\n", tag(rpm, RPMTAG_COPYRIGHT, ""));
+		printf("sourcerpm=%s\n", tag(rpm, RPMTAG_SOURCERPM, ""));
 		printf("size=%s\n", tag(rpm, RPMTAG_SIZE, ""));
 		return 0;
 	}

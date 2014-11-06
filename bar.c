@@ -762,6 +762,11 @@ static int bar_create(const char *archive, struct jlhead *files, int *err)
 	}
 	jl_append(rpm->tags, tag);
 
+	/* RPMTAG_SOURCERPM                1044 */
+	tag = tag_new(RPMTAG_SOURCERPM);
+	tag->value = "None";
+        jl_append(rpm->tags, tag);
+	
 	/* RPMTAG_POSTINPROG 1086 */
 	tag = tag_new(RPMTAG_POSTINPROG);
 	tag->value = "/bin/sh";
