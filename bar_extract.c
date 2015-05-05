@@ -299,6 +299,18 @@ static const char *tagstr(int t)
 		return "RPMTAG_POSTUNPROG";
 	case RPMTAG_FILEDIGESTALGO:
 		return "RPMTAG_FILEDIGESTALGO";
+	case RPMTAG_REQUIRENAME:
+		return "RPMTAG_REQUIRENAME";
+	case RPMTAG_REQUIREFLAGS:
+		return "RPMTAG_REQUIREFLAGS";
+	case RPMTAG_REQUIREVERSION:
+		return "RPMTAG_REQUIREVERSION";
+	case RPMTAG_OBSOLETENAME:
+		return "RPMTAG_OBSOLETENAME";
+	case RPMTAG_OBSOLETEFLAGS:
+		return "RPMTAG_OBSOLETEFLAGS";
+	case RPMTAG_OBSOLETEVERSION:
+		return "RPMTAG_OBSOLETEVERSION";
 	}
 	return "";
 }
@@ -695,23 +707,21 @@ struct jlhead *rpm_read_filenames(const struct logcb *log, struct rpm *rpm)
 		}
 		return l;
 	}
-	
 	names = tag(rpm, RPMTAG_BASENAMES, (void*)0);
 	if(!names) {
 		if(log) log->logln("header lacks filenames");
-		return l;
+//		return l;
 	}
 	dirindexes = tag(rpm, RPMTAG_DIRINDEXES, (void*)0);
 	if(!dirindexes) {
 		if(log) log->logln("header lacks DIRINDEXES");
-		return l;
+//		return l;
 	}
 	dirnames = tag(rpm, RPMTAG_DIRNAMES, (void*)0);
 	if(!dirnames) {
 		if(log) log->logln("header lacks DIRNAMES");
-		return l;
+//		return l;
 	}
-
 	{
 		const char *d=dirindexes;
 		const char *p=names;
@@ -825,7 +835,6 @@ int bar_extract(const struct logcb *log, const char *archive, struct jlhead *fil
 	
 	/* retrieve filenames; they might be encoded in two different ways */
 	filenames = rpm_read_filenames(log, rpm);
-
 	{
 		struct zstream z;
 		struct cpio_host cpio;
