@@ -142,7 +142,10 @@ char *stratindex(const char *lines, int idx)
 			return strdup(p);
 		}
 		p = n;
-		if(p) p++;
+		if(p) 
+			p++;
+		else
+			break;
 		idx--;
 	}
 	return (void*)0;
@@ -733,12 +736,12 @@ struct jlhead *rpm_read_filenames(const struct logcb *log, struct rpm *rpm)
 			np = strchr(p, '\n');
 			i = atoi(d);
 			dir = stratindex(dirnames, i);
-			name = malloc(strlen(dir)+(np?np-p:strlen(p))+1);
+			name = malloc((dir?strlen(dir):0)+(np?np-p:strlen(p))+1);
 			if(!name) {
 				if(log) log->logln("Failed to allocate memory for filename");
 				return NULL;
 			}
-			strcpy(name, dir);
+			strcpy(name, dir?dir:"");
 			free(dir);
 			strncat(name, p, np?np-p:strlen(p));
 			jl_append(l, name);
