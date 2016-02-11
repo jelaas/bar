@@ -768,14 +768,18 @@ static int bar_create(const char *archive, struct jlhead *files, int *err)
         jl_append(rpm->tags, tag);
 	
 	/* RPMTAG_POSTINPROG 1086 */
-	tag = tag_new(RPMTAG_POSTINPROG);
-	tag->value = "/bin/sh";
-        jl_append(rpm->tags, tag);
+	if(conf.tag.postin) {
+		tag = tag_new(RPMTAG_POSTINPROG);
+		tag->value = "/bin/sh";
+		jl_append(rpm->tags, tag);
+	}
 	
         /* RPMTAG_POSTUNPROG 1088 */
-	tag = tag_new(RPMTAG_POSTUNPROG);
-	tag->value = "/bin/sh";
-        jl_append(rpm->tags, tag);
+	if(conf.tag.postun) {
+		tag = tag_new(RPMTAG_POSTUNPROG);
+		tag->value = "/bin/sh";
+		jl_append(rpm->tags, tag);
+	}
 
 	/* RPMTAG_FILEDEVICES 1095 INT32 */
 	tag = tag_new(RPMTAG_FILEDEVICES);
