@@ -244,6 +244,19 @@ struct indexentry {
 #define RPMTAG_DEPENDSDICT           1145
 #define RPMTAG_FILEDIGESTALGO        5011
 
+/* Exported File Attributes (ie RPMTAG_FILEFLAGS) */
+#define RPMFILE_NONE              0
+#define RPMFILE_CONFIG     (1 <<  0)
+#define RPMFILE_DOC        (1 <<  1)
+#define RPMFILE_ICON       (1 <<  2)
+#define RPMFILE_MISSINGOK  (1 <<  3)
+#define RPMFILE_NOREPLACE  (1 <<  4)
+#define RPMFILE_SPECFILE   (1 <<  5)
+#define RPMFILE_GHOST      (1 <<  6)
+#define RPMFILE_LICENSE    (1 <<  7)
+#define RPMFILE_README     (1 <<  8)
+#define RPMFILE_PUBKEY     (1 << 11)
+
 struct tag {
 	int tag;
 	int type;
