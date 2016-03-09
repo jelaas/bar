@@ -32,6 +32,7 @@ struct cpio_file {
   char *md5;
   char *user, *group;
   char *link;
+  int fileflags; /* 0=normal, 1=config, 16=noreplace */
 };
 
 struct cpio_host {

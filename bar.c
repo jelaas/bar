@@ -59,6 +59,12 @@ struct {
 	struct bar_options opt;
 } conf;
 
+struct filespec {
+	uint32_t flags;
+	char *user, *group;
+};
+
+
 /*
  * Remove quotes and translate special quotes 'n', 't'
  */
@@ -717,7 +723,7 @@ static int bar_create(const char *archive, struct jlhead *files, int *err)
 	}
 	p = tag->value;
 	jl_foreach(files, f) {
-		sprintf(p, "0\n");
+		sprintf(p, "%d\n", f->fileflags);
 		p += strlen(p);
 	}
 	jl_append(rpm->tags, tag);
@@ -871,7 +877,7 @@ static int bar_create(const char *archive, struct jlhead *files, int *err)
 	return 0;
 }
 
-static int file_new(struct jlhead *files, const char *fn, int create, int recursive)
+static int file_new(struct jlhead *files, const char *fn, int create, int recursive, struct filespec *spec)
 {
 	struct cpio_file *f;
 	int fd;
@@ -885,8 +891,9 @@ static int file_new(struct jlhead *files, const char *fn, int create, int recurs
 		fprintf(stderr, "%s\n", fn);
 		return -1;
 	}
-
+	
 	f->name = strdup(fn);
+	f->fileflags = spec->flags;
 	
 	/* normalize name to always start with '/' */
 	if(*fn != '/') {
@@ -980,6 +987,12 @@ static int file_new(struct jlhead *files, const char *fn, int create, int recurs
 	}
 	f->link = "";
 
+	if(spec->user) f->user = spec->user;
+	if(spec->group) f->group = spec->group;
+	if(conf.verbose > 2) {
+		fprintf(stderr, "bar: %s:%s %s\n", f->user, f->group, f->name);
+	}
+
 	if(S_ISLNK(f->stat.st_mode)) {
 		if(conf.verbose > 2) {
 			fprintf(stderr, "bar: processing link file  %s\n", f->name);
@@ -1050,7 +1063,7 @@ static int file_new(struct jlhead *files, const char *fn, int create, int recurs
 			}
 			
 			snprintf((char*)buf, sizeof(buf), "%s/%s", fn, ent->d_name);
-			if(file_new(files, (char*)buf, create, recursive)) {
+			if(file_new(files, (char*)buf, create, recursive, spec)) {
 				fprintf(stderr, "bar: Failed to add file %s\n", buf);
 				closedir(dir);
 				return -1;
@@ -1185,6 +1198,10 @@ int main(int argc, char **argv)
 		       "     --name=archive\\\n"
 		       "     --postin \"echo post_install%%necho line2%%n\"\\\n"
 		       "     -cr archive-3.0.0-1.noarch.rpm path1 path2\n"
+		       " Marking a configuration file:\n"
+		       "  $ bar -c archive.rpm config::etc/config\n"
+		       " Specifying owner:\n"
+		       "  $ bar -c archive.rpm owner@wheel:wheel::etc/config\n"
 			);
 		exit(0);
 	}
@@ -1227,6 +1244,11 @@ int main(int argc, char **argv)
 		       "\n"
 		       " Examples:\n"
 		       " --examples\n"
+		       "\n"
+		       " 'path' can be prefixed with one or more of:\n"
+		       " config::               Mark as configfile\n"
+		       " noreplace::            Mark as configfile and not to be replaced\n"
+		       " owner@USER:GROUP::     Specify owner of files\n"
 			);
 		exit(rc);
 	}
@@ -1319,7 +1341,37 @@ int main(int argc, char **argv)
 
 
 	for(i=2;i<argc;i++) {
-		if(file_new(files, argv[i], conf.create, conf.recursive)) {
+		struct filespec spec;
+		char *p;
+		spec.flags = 0;
+		spec.user = (void*)0;
+		spec.group = (void*)0;
+		p = argv[i];
+		if(!strncmp(p, "config::", 8)) {
+			spec.flags = RPMFILE_CONFIG;
+			p+=8;
+		}
+		if(!strncmp(p, "noreplace::", 11)) {
+			spec.flags = RPMFILE_CONFIG|RPMFILE_NOREPLACE;
+			p+=11;
+		}
+		if(!strncmp(p, "owner@", 6)) {
+			char *end;
+			p+=6;
+			spec.user = strdup(p);
+			spec.group = strchr(spec.user, ':');
+			if(!spec.group) continue;
+			*(spec.group) = 0;
+			spec.group++;
+			p = strstr(p, "::");
+			if(!p) continue;
+			end = strstr(spec.group, "::");
+			*end=0;
+			p += 2;
+			if(conf.verbose > 2) printf("spec.user = '%s'\n", spec.user);
+			if(conf.verbose > 2) printf("spec.group = '%s'\n", spec.group);
+		}
+		if(file_new(files, p, conf.create, conf.recursive, &spec)) {
 			fprintf(stderr, "bar: Failed to add file %s. Aborting.\n", argv[i]);
 			exit(1);
 		}
