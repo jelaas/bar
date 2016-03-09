@@ -1248,6 +1248,7 @@ int main(int argc, char **argv)
 		       " 'path' can be prefixed with one or more of:\n"
 		       " config::               Mark as configfile\n"
 		       " noreplace::            Mark as configfile and not to be replaced\n"
+		       " missingok::            Mark as missingok\n"
 		       " owner@USER:GROUP::     Specify owner of files\n"
 			);
 		exit(rc);
@@ -1353,6 +1354,10 @@ int main(int argc, char **argv)
 		}
 		if(!strncmp(p, "noreplace::", 11)) {
 			spec.flags = RPMFILE_CONFIG|RPMFILE_NOREPLACE;
+			p+=11;
+		}
+		if(!strncmp(p, "missingok::", 11)) {
+			spec.flags = RPMFILE_MISSINGOK;
 			p+=11;
 		}
 		if(!strncmp(p, "owner@", 6)) {
