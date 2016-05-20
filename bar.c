@@ -54,6 +54,7 @@ struct {
 		char *summary, *description, *group;
 		char *fuser, *fgroup;
 		char *postin, *postun;
+		char *prein, *preun;
 	} tag;
 	struct logcb log;
 	struct bar_options opt;
@@ -572,10 +573,24 @@ static int bar_create(const char *archive, struct jlhead *files, int *err)
 	tag->value = conf.tag.arch;
         jl_append(rpm->tags, tag);
 
+	/* RPMTAG_PREIN 1023 */
+	if(conf.tag.prein) {
+		tag = tag_new(RPMTAG_PREIN);
+		tag->value = conf.tag.prein;
+		jl_append(rpm->tags, tag);
+	}
+
 	/* RPMTAG_POSTIN 1024 */
 	if(conf.tag.postin) {
 		tag = tag_new(RPMTAG_POSTIN);
 		tag->value = conf.tag.postin;
+		jl_append(rpm->tags, tag);
+	}
+
+	/* RPMTAG_PREUN 1025 */
+	if(conf.tag.preun) {
+		tag = tag_new(RPMTAG_PREUN);
+		tag->value = conf.tag.preun;
 		jl_append(rpm->tags, tag);
 	}
 
@@ -773,6 +788,13 @@ static int bar_create(const char *archive, struct jlhead *files, int *err)
 	tag->value = "None";
         jl_append(rpm->tags, tag);
 	
+	/* RPMTAG_PREINPROG 1085 */
+	if(conf.tag.prein) {
+		tag = tag_new(RPMTAG_PREINPROG);
+		tag->value = "/bin/sh";
+		jl_append(rpm->tags, tag);
+	}
+	
 	/* RPMTAG_POSTINPROG 1086 */
 	if(conf.tag.postin) {
 		tag = tag_new(RPMTAG_POSTINPROG);
@@ -780,6 +802,13 @@ static int bar_create(const char *archive, struct jlhead *files, int *err)
 		jl_append(rpm->tags, tag);
 	}
 	
+        /* RPMTAG_PREUNPROG 1087 */
+	if(conf.tag.preun) {
+		tag = tag_new(RPMTAG_PREUNPROG);
+		tag->value = "/bin/sh";
+		jl_append(rpm->tags, tag);
+	}
+
         /* RPMTAG_POSTUNPROG 1088 */
 	if(conf.tag.postun) {
 		tag = tag_new(RPMTAG_POSTUNPROG);
@@ -1226,6 +1255,8 @@ int main(int argc, char **argv)
 		       " --license <string>     [GPLv2+]\n"
 		       " --name <string>        [from archive-file name]\n"
 		       " --os <osname>          [from uname]\n"
+		       " --prein <string>       pre install script\n"
+		       " --preun <string>       pre uninstall script\n"
 		       " --postin <string>      post install script\n"
 		       " --postun <string>      post uninstall script\n"
 		       " --release <string>     [current date and time YYYYMMDD.HHMMSS]\n"
@@ -1267,15 +1298,19 @@ int main(int argc, char **argv)
 	while(jelopt(argv, 0, "license", &conf.tag.license, &err));
 	while(jelopt(argv, 0, "name", &conf.tag.name, &err));
 	while(jelopt(argv, 0, "os", &conf.tag.os, &err));
-	while(jelopt(argv, 0, "postin", &conf.tag.postin, &err))
-		conf.tag.postin = dequote(conf.tag.postin);
-	while(jelopt(argv, 0, "postun", &conf.tag.postun, &err))
-		conf.tag.postun = dequote(conf.tag.postun);
 	{
 		char *tmp;
 		while(jelopt(argv, 0, "quotechar", &tmp, &err))
 			if(tmp) conf.quotechar = *tmp;
 	}
+	while(jelopt(argv, 0, "prein", &conf.tag.prein, &err))
+		conf.tag.prein = dequote(conf.tag.prein);
+	while(jelopt(argv, 0, "preun", &conf.tag.preun, &err))
+		conf.tag.preun = dequote(conf.tag.preun);
+	while(jelopt(argv, 0, "postin", &conf.tag.postin, &err))
+		conf.tag.postin = dequote(conf.tag.postin);
+	while(jelopt(argv, 0, "postun", &conf.tag.postun, &err))
+		conf.tag.postun = dequote(conf.tag.postun);
 	while(jelopt(argv, 0, "release", &conf.tag.release, &err));
 	while(jelopt(argv, 0, "version", &conf.tag.version, &err));
 	while(jelopt(argv, 0, "description", &conf.tag.description, &err))
