@@ -62,7 +62,7 @@ struct {
 
 struct filespec {
 	uint32_t flags;
-	char *user, *group;
+	char *user, *group, *prefix;
 };
 
 
@@ -948,17 +948,22 @@ static int file_new(struct jlhead *files, const char *fn, int create, int recurs
 		fprintf(stderr, "bar: processing file %s\n", f->name);
 	}
 
-	if(conf.opt.prefix) {
-		char *p;
-		p = malloc(strlen(conf.opt.prefix)+strlen(f->normalized_name)+1);
-		if(!p) {
-			fprintf(stderr, "bar: failed to malloc memory for prefixed filename: ");
-			fprintf(stderr, "%s\n", f->name);
-			return -1;
+	{
+		char *prefix = (void*) 0;
+		if(conf.opt.prefix) prefix = conf.opt.prefix;
+		if(spec->prefix) prefix = spec->prefix;
+		if(prefix) {
+			char *p;
+			p = malloc(strlen(prefix)+strlen(f->normalized_name)+1);
+			if(!p) {
+				fprintf(stderr, "bar: failed to malloc memory for prefixed filename: ");
+				fprintf(stderr, "%s\n", f->name);
+				return -1;
+			}
+			strcpy(p, prefix);
+			strcat(p, f->normalized_name);
+			f->normalized_name = p;
 		}
-		strcpy(p, conf.opt.prefix);
-		strcat(p, f->normalized_name);
-		f->normalized_name = p;
 	}
 	
 	/* Names in the cpio archive should start with "./" */
@@ -1281,6 +1286,7 @@ int main(int argc, char **argv)
 		       " noreplace::            Mark as configfile and not to be replaced\n"
 		       " missingok::            Mark as missingok\n"
 		       " owner@USER:GROUP::     Specify owner of files\n"
+		       " prefix/PATH::          Add path prefix\n"
 			);
 		exit(rc);
 	}
@@ -1382,6 +1388,7 @@ int main(int argc, char **argv)
 		spec.flags = 0;
 		spec.user = (void*)0;
 		spec.group = (void*)0;
+		spec.prefix = (void*)0;
 		p = argv[i];
 		if(!strncmp(p, "config::", 8)) {
 			spec.flags = RPMFILE_CONFIG;
@@ -1410,6 +1417,22 @@ int main(int argc, char **argv)
 			p += 2;
 			if(conf.verbose > 2) printf("spec.user = '%s'\n", spec.user);
 			if(conf.verbose > 2) printf("spec.group = '%s'\n", spec.group);
+		}
+		if(!strncmp(p, "prefix/", 7)) {
+			char *end;
+			p+=6;
+			end = strstr(p, "::");
+			if(!end) continue;
+			*end=0;
+			spec.prefix = strdup(p);
+			{
+				int len = strlen(spec.prefix);
+				if(len)
+					if(spec.prefix[len-1] == '/')
+						spec.prefix[len-1] = 0;
+			}
+			p = end+2;
+			if(conf.verbose > 2) printf("spec.prefix = '%s'\n", spec.prefix);
 		}
 		if(file_new(files, p, conf.create, conf.recursive, &spec)) {
 			fprintf(stderr, "bar: Failed to add file %s. Aborting.\n", argv[i]);
