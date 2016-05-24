@@ -849,6 +849,8 @@ int bar_extract(const struct logcb *log, const char *archive, struct jlhead *fil
 		char buf[4096];
 		int selected;
 		char *filemd5 = (void*)0;
+		char *fileuser = (void*)0;
+		char *filegroup = (void*)0;
 		char *tmpname = (void*)0;
 		
 		rpm->uncompressed_size = 0;
@@ -887,15 +889,31 @@ int bar_extract(const struct logcb *log, const char *archive, struct jlhead *fil
 				int fileindex = 0;
 				char *name;
 				filemd5 = (void*)0;
-				if(!conf->ignore_chksum) {
-					jl_foreach(filenames, name) {
-						if(strcmp(name, normalize_name(cpio.name))==0) {
+				fileuser = (void*)0;
+				filegroup = (void*)0;
+				jl_foreach(filenames, name) {
+					if(strcmp(name, normalize_name(cpio.name))==0) {
+						if(!conf->ignore_chksum) {
 							filemd5 = stratindex(tag(rpm, RPMTAG_FILEMD5S, (void*)0), fileindex);
-							break;
 						}
-						fileindex++;
+						fileuser = stratindex(tag(rpm, RPMTAG_FILEUSERNAME, (void*)0), fileindex);
+						filegroup = stratindex(tag(rpm, RPMTAG_FILEGROUPNAME, (void*)0), fileindex);
+						break;
 					}
+					fileindex++;
 				}
+			}
+
+			{
+				char uidbuf[16], gidbuf[16];
+				if(!fileuser) {
+					snprintf(uidbuf, sizeof(uidbuf), "%d", cpio.c_uid);
+					fileuser = uidbuf;
+				}
+				if(!filegroup) {
+					snprintf(gidbuf, sizeof(gidbuf), "%d", cpio.c_gid);
+					filegroup = gidbuf;
+				}				
 			}
 			
 			if(selected && (conf->list || (log && log->level))) {
@@ -909,8 +927,8 @@ int bar_extract(const struct logcb *log, const char *archive, struct jlhead *fil
 						printf("%s\t%llu\t%s\t%s\n",
 						       cpio.mode, cpio.c_filesize, filemd5?filemd5:"-", cpio.name);
 					else
-						printf("%-8o %4d %6d %6d %9llu %9s %s\n",
-						       cpio.c_mode, cpio.c_nlink, cpio.c_uid, cpio.c_gid,
+						printf("%-8o %4d %6s %6s %9llu %9s %s\n",
+						       cpio.c_mode, cpio.c_nlink, fileuser, filegroup,
 						       cpio.c_filesize, buf, cpio.name);
 				} else
 					printf("%s\n", cpio.name);
