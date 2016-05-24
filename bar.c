@@ -1390,53 +1390,61 @@ int main(int argc, char **argv)
 		spec.group = (void*)0;
 		spec.prefix = (void*)0;
 		p = argv[i];
-		if(!strncmp(p, "config::", 8)) {
-			spec.flags = RPMFILE_CONFIG;
-			p+=8;
-		}
-		if(!strncmp(p, "noreplace::", 11)) {
-			spec.flags = RPMFILE_CONFIG|RPMFILE_NOREPLACE;
-			p+=11;
-		}
-		if(!strncmp(p, "missingok::", 11)) {
-			spec.flags = RPMFILE_MISSINGOK;
-			p+=11;
-		}
-		if(!strncmp(p, "owner@", 6)) {
-			char *end;
-			p+=6;
-			spec.user = strdup(p);
-			spec.group = strchr(spec.user, ':');
-			if(!spec.group) continue;
-			*(spec.group) = 0;
-			spec.group++;
-			p = strstr(p, "::");
-			if(!p) continue;
-			end = strstr(spec.group, "::");
-			*end=0;
-			p += 2;
-			if(conf.verbose > 2) printf("spec.user = '%s'\n", spec.user);
-			if(conf.verbose > 2) printf("spec.group = '%s'\n", spec.group);
-		}
-		if(!strncmp(p, "prefix/", 7)) {
-			char *end;
-			p+=6;
-			end = strstr(p, "::");
-			if(!end) continue;
-			*end=0;
-			spec.prefix = strdup(p);
-			{
-				int len = strlen(spec.prefix);
-				if(len)
-					if(spec.prefix[len-1] == '/')
-						spec.prefix[len-1] = 0;
+		while(1) {
+			if(!strncmp(p, "config::", 8)) {
+				spec.flags = RPMFILE_CONFIG;
+				p+=8;
+				continue;
 			}
-			p = end+2;
-			if(conf.verbose > 2) printf("spec.prefix = '%s'\n", spec.prefix);
-		}
-		if(file_new(files, p, conf.create, conf.recursive, &spec)) {
-			fprintf(stderr, "bar: Failed to add file %s. Aborting.\n", argv[i]);
-			exit(1);
+			if(!strncmp(p, "noreplace::", 11)) {
+				spec.flags = RPMFILE_CONFIG|RPMFILE_NOREPLACE;
+				p+=11;
+				continue;
+			}
+			if(!strncmp(p, "missingok::", 11)) {
+				spec.flags = RPMFILE_MISSINGOK;
+				p+=11;
+				continue;
+			}
+			if(!strncmp(p, "owner@", 6)) {
+				char *end;
+				p+=6;
+				spec.user = strdup(p);
+				spec.group = strchr(spec.user, ':');
+				if(!spec.group) break;
+				*(spec.group) = 0;
+				spec.group++;
+				p = strstr(p, "::");
+				if(!p) break;
+				end = strstr(spec.group, "::");
+				*end=0;
+				p += 2;
+				if(conf.verbose > 2) printf("spec.user = '%s'\n", spec.user);
+				if(conf.verbose > 2) printf("spec.group = '%s'\n", spec.group);
+				continue;
+			}
+			if(!strncmp(p, "prefix/", 7)) {
+				char *end;
+				p+=6;
+				end = strstr(p, "::");
+				if(!end) break;
+				*end=0;
+				spec.prefix = strdup(p);
+				{
+					int len = strlen(spec.prefix);
+					if(len)
+						if(spec.prefix[len-1] == '/')
+							spec.prefix[len-1] = 0;
+				}
+				p = end+2;
+				if(conf.verbose > 2) printf("spec.prefix = '%s'\n", spec.prefix);
+				continue;
+			}
+			if(file_new(files, p, conf.create, conf.recursive, &spec)) {
+				fprintf(stderr, "bar: Failed to add file %s. Aborting.\n", argv[i]);
+				exit(1);
+			}
+			break;
 		}
 	}
 	
