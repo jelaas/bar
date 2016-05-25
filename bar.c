@@ -1288,6 +1288,8 @@ int main(int argc, char **argv)
 		       " missingok::            Mark as missingok\n"
 		       " owner@USER:GROUP::     Specify owner of files\n"
 		       " prefix/PATH::          Add path prefix\n"
+		       " r::                    Recursive descent into path\n"
+		       " nor::                  No recursive descent into path\n"
 			);
 		exit(rc);
 	}
@@ -1406,6 +1408,16 @@ int main(int argc, char **argv)
 			if(!strncmp(p, "missingok::", 11)) {
 				spec.flags = RPMFILE_MISSINGOK;
 				p+=11;
+				continue;
+			}
+			if(!strncmp(p, "r::", 3)) {
+				spec.recursive = 1;
+				p+=3;
+				continue;
+			}
+			if(!strncmp(p, "nor::", 5)) {
+				spec.recursive = 0;
+				p+=5;
 				continue;
 			}
 			if(!strncmp(p, "owner@", 6)) {
