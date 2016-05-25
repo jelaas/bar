@@ -62,6 +62,7 @@ struct {
 
 struct filespec {
 	uint32_t flags;
+	int recursive;
 	char *user, *group, *prefix;
 };
 
@@ -906,7 +907,7 @@ static int bar_create(const char *archive, struct jlhead *files, int *err)
 	return 0;
 }
 
-static int file_new(struct jlhead *files, const char *fn, int create, int recursive, struct filespec *spec)
+static int file_new(struct jlhead *files, const char *fn, int create, struct filespec *spec)
 {
 	struct cpio_file *f;
 	int fd;
@@ -1069,7 +1070,7 @@ static int file_new(struct jlhead *files, const char *fn, int create, int recurs
 		fprintf(stderr, "bar: Added file: %s md5sum: %s\n", f->name, f->md5);
 	}
 
-	if(recursive && S_ISDIR(f->stat.st_mode)) {
+	if(spec->recursive && S_ISDIR(f->stat.st_mode)) {
 		DIR *dir;
 		struct dirent *ent;
 		
@@ -1097,7 +1098,7 @@ static int file_new(struct jlhead *files, const char *fn, int create, int recurs
 			}
 			
 			snprintf((char*)buf, sizeof(buf), "%s/%s", fn, ent->d_name);
-			if(file_new(files, (char*)buf, create, recursive, spec)) {
+			if(file_new(files, (char*)buf, create, spec)) {
 				fprintf(stderr, "bar: Failed to add file %s\n", buf);
 				closedir(dir);
 				return -1;
@@ -1389,6 +1390,7 @@ int main(int argc, char **argv)
 		spec.user = (void*)0;
 		spec.group = (void*)0;
 		spec.prefix = (void*)0;
+		spec.recursive = conf.recursive;
 		p = argv[i];
 		while(1) {
 			if(!strncmp(p, "config::", 8)) {
@@ -1440,7 +1442,7 @@ int main(int argc, char **argv)
 				if(conf.verbose > 2) printf("spec.prefix = '%s'\n", spec.prefix);
 				continue;
 			}
-			if(file_new(files, p, conf.create, conf.recursive, &spec)) {
+			if(file_new(files, p, conf.create, &spec)) {
 				fprintf(stderr, "bar: Failed to add file %s. Aborting.\n", argv[i]);
 				exit(1);
 			}
