@@ -851,6 +851,7 @@ int bar_extract(const struct logcb *log, const char *archive, struct jlhead *fil
 		char *filemd5 = (void*)0;
 		char *fileuser = (void*)0;
 		char *filegroup = (void*)0;
+		char *fileflags = (void*)0;
 		char *tmpname = (void*)0;
 		
 		rpm->uncompressed_size = 0;
@@ -891,6 +892,7 @@ int bar_extract(const struct logcb *log, const char *archive, struct jlhead *fil
 				filemd5 = (void*)0;
 				fileuser = (void*)0;
 				filegroup = (void*)0;
+				fileflags = (void*)0;
 				jl_foreach(filenames, name) {
 					if(strcmp(name, normalize_name(cpio.name))==0) {
 						if(!conf->ignore_chksum) {
@@ -898,6 +900,7 @@ int bar_extract(const struct logcb *log, const char *archive, struct jlhead *fil
 						}
 						fileuser = stratindex(tag(rpm, RPMTAG_FILEUSERNAME, (void*)0), fileindex);
 						filegroup = stratindex(tag(rpm, RPMTAG_FILEGROUPNAME, (void*)0), fileindex);
+						fileflags = stratindex(tag(rpm, RPMTAG_FILEFLAGS, (void*)0), fileindex);
 						break;
 					}
 					fileindex++;
@@ -908,12 +911,39 @@ int bar_extract(const struct logcb *log, const char *archive, struct jlhead *fil
 				char uidbuf[16], gidbuf[16];
 				if(!fileuser) {
 					snprintf(uidbuf, sizeof(uidbuf), "%d", cpio.c_uid);
-					fileuser = uidbuf;
+					fileuser = strdup(uidbuf);
 				}
 				if(!filegroup) {
 					snprintf(gidbuf, sizeof(gidbuf), "%d", cpio.c_gid);
-					filegroup = gidbuf;
-				}				
+					filegroup = strdup(gidbuf);
+				}
+			}
+
+			{
+				char s[16];
+				s[0] = 0;
+				
+				if(fileflags) {
+					int i;
+					i = atoi(fileflags);
+					free(fileflags);
+					fileflags = (void*)0;
+					if(i) {
+						strcat(s, "[");
+						if(i & RPMFILE_CONFIG) strcat(s, "c");
+						if(i & RPMFILE_DOC) strcat(s, "d");
+						if(i & RPMFILE_ICON) strcat(s, "i");
+						if(i & RPMFILE_MISSINGOK) strcat(s, "m");
+						if(i & RPMFILE_NOREPLACE) strcat(s, "n");
+						if(i & RPMFILE_SPECFILE) strcat(s, "s");
+						if(i & RPMFILE_GHOST) strcat(s, "g");
+						if(i & RPMFILE_LICENSE) strcat(s, "l");
+						if(i & RPMFILE_README) strcat(s, "r");
+						if(i & RPMFILE_PUBKEY) strcat(s, "p");
+						strcat(s, "]");
+						fileflags = s;
+					}
+				}
 			}
 			
 			if(selected && (conf->list || (log && log->level))) {
@@ -927,9 +957,9 @@ int bar_extract(const struct logcb *log, const char *archive, struct jlhead *fil
 						printf("%s\t%llu\t%s\t%s\n",
 						       cpio.mode, cpio.c_filesize, filemd5?filemd5:"-", cpio.name);
 					else
-						printf("%-8o %4d %6s %6s %9llu %9s %s\n",
+						printf("%-8o %4d %6s %6s %9llu %9s %s %s\n",
 						       cpio.c_mode, cpio.c_nlink, fileuser, filegroup,
-						       cpio.c_filesize, buf, cpio.name);
+						       cpio.c_filesize, buf, cpio.name, fileflags?fileflags:"");
 				} else
 					printf("%s\n", cpio.name);
 			}
@@ -1102,6 +1132,8 @@ int bar_extract(const struct logcb *log, const char *archive, struct jlhead *fil
 					}
 				}
 				if(filemd5) free(filemd5);
+				if(fileuser) free(fileuser);
+				if(filegroup) free(filegroup);
 			}
 			if(ofd >= 0) {
 				struct timeval tv[2];
