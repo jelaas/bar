@@ -257,6 +257,13 @@ struct indexentry {
 #define RPMFILE_README     (1 <<  8)
 #define RPMFILE_PUBKEY     (1 << 11)
 
+/* Used in RPMTAG_REQUIREFLAGS INT32 bitfield
+   (usually RPMSENSE_GREATER|RPMSENSE_EQUAL to require versions greater or equal to versionstring in RPMTAG_REQUIREVERSION */
+#define RPMSENSE_ANY 0
+#define RPMSENSE_LESS 2
+#define RPMSENSE_GREATER 4
+#define RPMSENSE_EQUAL 8
+
 struct tag {
 	int tag;
 	int type;

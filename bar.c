@@ -58,6 +58,7 @@ struct {
 	} tag;
 	struct logcb log;
 	struct bar_options opt;
+	struct jlhead *requires;
 } conf;
 
 struct filespec {
@@ -66,6 +67,10 @@ struct filespec {
 	char *user, *group, *prefix;
 };
 
+struct req {
+	char *name;
+	char *version;
+};
 
 /*
  * Remove quotes and translate special quotes 'n', 't'
@@ -789,6 +794,67 @@ static int bar_create(const char *archive, struct jlhead *files, int *err)
 	tag->value = "None";
         jl_append(rpm->tags, tag);
 	
+	if(conf.requires) {
+		int i;
+		struct req *req;
+		
+		/* RPMTAG_REQUIREFLAGS 1048 */
+		tag = tag_new(RPMTAG_REQUIREFLAGS);
+		tag->type = HDRTYPE_INT32;
+		tag->count = conf.requires->len;
+		tag->value = malloc(conf.requires->len * 12);
+		if(!tag->value) {
+			fprintf(stderr, "bar: Failed to allocate buffer for tag value\n");
+			return -1;
+		}
+		p = tag->value;
+		for(i=0;i<conf.requires->len;i++) {
+			sprintf(p, "%d\n", RPMSENSE_GREATER|RPMSENSE_EQUAL);
+			p += strlen(p);
+		}
+		jl_append(rpm->tags, tag);
+		
+		/* RPMTAG_REQUIRENAME 1049 */
+		tag = tag_new(RPMTAG_REQUIRENAME);
+		tag->type = HDRTYPE_STRARRAY;
+		tag->count = conf.requires->len;
+		tag->size = 0;
+		jl_foreach(conf.requires, req) {
+			tag->size += (strlen(req->name)+1);
+		}
+		tag->value = malloc(tag->size);
+		if(!tag->value) {
+			fprintf(stderr, "bar: Failed to allocate buffer for tag value\n");
+			return -1;
+		}
+		p = tag->value;
+		jl_foreach(conf.requires, req) {
+			strcpy(p, req->name);
+			p += (strlen(p)+1);
+		}
+		jl_append(rpm->tags, tag);
+
+		/* RPMTAG_REQUIREVERSION 1050 */
+		tag = tag_new(RPMTAG_REQUIREVERSION);
+		tag->type = HDRTYPE_STRARRAY;
+		tag->count = conf.requires->len;
+		tag->size = 0;
+		jl_foreach(conf.requires, req) {
+			tag->size += (strlen(req->version)+1);
+		}
+		tag->value = malloc(tag->size);
+		if(!tag->value) {
+			fprintf(stderr, "bar: Failed to allocate buffer for tag value\n");
+			return -1;
+		}
+		p = tag->value;
+		jl_foreach(conf.requires, req) {
+			strcpy(p, req->version);
+			p += (strlen(p)+1);
+		}
+		jl_append(rpm->tags, tag);
+	}
+
 	/* RPMTAG_PREINPROG 1085 */
 	if(conf.tag.prein) {
 		tag = tag_new(RPMTAG_PREINPROG);
@@ -1237,6 +1303,8 @@ int main(int argc, char **argv)
 		       "  $ bar -c archive.rpm config::etc/config\n"
 		       " Specifying owner:\n"
 		       "  $ bar -c archive.rpm owner@wheel:wheel::etc/config\n"
+		       " Specify package requirement:\n"
+		       "  $ bar -c a.rpm --require bash 4.0.0-1\n"
 			);
 		exit(0);
 	}
@@ -1266,6 +1334,7 @@ int main(int argc, char **argv)
 		       " --postin <string>      post install script\n"
 		       " --postun <string>      post uninstall script\n"
 		       " --release <string>     [current date and time YYYYMMDD.HHMMSS]\n"
+		       " --require <pkgname> <pkgversion>\n"
 		       " --summary <string>     [None]\n"
 		       " --version <string>     [0]\n"
 		       "\n"
@@ -1338,7 +1407,21 @@ int main(int argc, char **argv)
 			if(conf.opt.prefix[len-1] == '/')
 				conf.opt.prefix[len-1] = 0;
 	}
-
+	{
+		char *values[3];
+		while(jelopt_multi(argv, 0, "require", 2, values, &err)) {
+			struct req *req;
+			if(!conf.requires) {
+				conf.requires = jl_new();
+			}
+			
+			req = malloc(sizeof(struct req));
+			req->name = strdup(values[0]);
+			req->version = strdup(values[1]);
+			jl_append(conf.requires, req);
+		}
+	}
+	
 	conf.log.level = conf.verbose;
 	conf.log.pre = &barlog_pre;
 	conf.log.post = &barlog_post;
@@ -1347,7 +1430,7 @@ int main(int argc, char **argv)
 	
 	argc = jelopt_final(argv, &err);
 	if(err) {
-		fprintf(stderr, "bar: Syntax error in options.\n");
+		fprintf(stderr, "bar: Syntax error in options: %d\n", err);
 		exit(2);
 	}
 	if(conf.create+conf.extract+conf.verify > 1) {
