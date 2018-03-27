@@ -1434,11 +1434,11 @@ int main(int argc, char **argv)
 		exit(2);
 	}
 	if(conf.create+conf.extract+conf.verify > 1) {
-		fprintf(stderr, "bar: You must specify exactly one of [cxV]\n");
+		fprintf(stderr, "bar: You must specify exactly one of [cxli]\n");
 		exit(2);
 	}
 	if(conf.create+conf.extract+conf.verify == 0) {
-		fprintf(stderr, "bar: You must specify one of [cxV]\n");
+		fprintf(stderr, "bar: You must specify one of [cxli]\n");
 		exit(2);
 	}
 	if(argc < 2) {
