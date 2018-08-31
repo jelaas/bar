@@ -23,9 +23,14 @@ bar [-hriclxv] archive-file [path ..]
  --license <string>     [GPLv2+]
  --name <string>        [from archive-file name]
  --os <osname>          [from uname]
+ --prein <string>       pre install script
+ --preun <string>       pre uninstall script
+ --pretrans <string>    pre transaction script
  --postin <string>      post install script
  --postun <string>      post uninstall script
+ --posttrans <string>   post transaction script
  --release <string>     [current date and time YYYYMMDD.HHMMSS]
+ --require <pkgname> <pkgversion>
  --summary <string>     [None]
  --version <string>     [0]
 
@@ -47,6 +52,9 @@ bar [-hriclxv] archive-file [path ..]
  noreplace::            Mark as configfile and not to be replaced
  missingok::            Mark as missingok
  owner@USER:GROUP::     Specify owner of files
+ prefix/PATH::          Add path prefix
+ r::                    Recursive descent into path
+ nor::                  No recursive descent into path
 
 Examples: 
  Listing contents:
