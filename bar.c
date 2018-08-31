@@ -53,8 +53,8 @@ struct {
 		char *arch, *buildtime, *os, *license, *version, *release, *name;
 		char *summary, *description, *group;
 		char *fuser, *fgroup;
-		char *postin, *postun;
-		char *prein, *preun;
+		char *postin, *postun, *posttrans;
+		char *prein, *preun, *pretrans;
 	} tag;
 	struct logcb log;
 	struct bar_options opt;
@@ -945,10 +945,38 @@ static int bar_create(const char *archive, struct jlhead *files, int *err)
 	tag->value = "gzip";
 	jl_append(rpm->tags, tag);
 
-	/* RPMTAG_PAYLOADFLAGS */
+	/* RPMTAG_PAYLOADFLAGS 1126 */
 	tag = tag_new(RPMTAG_PAYLOADFLAGS);
 	tag->value = "9";
 	jl_append(rpm->tags, tag);
+
+	/* RPMTAG_PRETRANS 1151 */
+	if(conf.tag.pretrans) {
+		tag = tag_new(RPMTAG_PRETRANS);
+		tag->value = conf.tag.pretrans;
+		jl_append(rpm->tags, tag);
+	}
+
+	/* RPMTAG_POSTTRANS 1152 */
+	if(conf.tag.posttrans) {
+		tag = tag_new(RPMTAG_POSTTRANS);
+		tag->value = conf.tag.posttrans;
+		jl_append(rpm->tags, tag);
+	}
+
+	/* RPMTAG_PRETRANSPROG 1153 */
+	if(conf.tag.pretrans) {
+		tag = tag_new(RPMTAG_PRETRANSPROG);
+		tag->value = "/bin/sh";
+		jl_append(rpm->tags, tag);
+	}
+
+	/* RPMTAG_POSTTRANSPROG 1154 */
+	if(conf.tag.posttrans) {
+		tag = tag_new(RPMTAG_POSTTRANSPROG);
+		tag->value = "/bin/sh";
+		jl_append(rpm->tags, tag);
+	}
 
 	fd = open(archive, O_RDWR|O_CREAT|O_TRUNC, 0644);
 	if(fd == -1) return -1;
@@ -1331,8 +1359,10 @@ int main(int argc, char **argv)
 		       " --os <osname>          [from uname]\n"
 		       " --prein <string>       pre install script\n"
 		       " --preun <string>       pre uninstall script\n"
+		       " --pretrans <string>    pre transaction script\n"
 		       " --postin <string>      post install script\n"
 		       " --postun <string>      post uninstall script\n"
+		       " --posttrans <string>   post transaction script\n"
 		       " --release <string>     [current date and time YYYYMMDD.HHMMSS]\n"
 		       " --require <pkgname> <pkgversion>\n"
 		       " --summary <string>     [None]\n"
@@ -1385,10 +1415,14 @@ int main(int argc, char **argv)
 		conf.tag.prein = dequote(conf.tag.prein);
 	while(jelopt(argv, 0, "preun", &conf.tag.preun, &err))
 		conf.tag.preun = dequote(conf.tag.preun);
+	while(jelopt(argv, 0, "pretrans", &conf.tag.pretrans, &err))
+		conf.tag.pretrans = dequote(conf.tag.pretrans);
 	while(jelopt(argv, 0, "postin", &conf.tag.postin, &err))
 		conf.tag.postin = dequote(conf.tag.postin);
 	while(jelopt(argv, 0, "postun", &conf.tag.postun, &err))
 		conf.tag.postun = dequote(conf.tag.postun);
+	while(jelopt(argv, 0, "posttrans", &conf.tag.posttrans, &err))
+		conf.tag.posttrans = dequote(conf.tag.posttrans);
 	while(jelopt(argv, 0, "release", &conf.tag.release, &err));
 	while(jelopt(argv, 0, "version", &conf.tag.version, &err));
 	while(jelopt(argv, 0, "description", &conf.tag.description, &err))

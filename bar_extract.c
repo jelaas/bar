@@ -296,12 +296,18 @@ static const char *tagstr(int t)
 		return "RPMTAG_POSTIN";
 	case RPMTAG_POSTUN:
 		return "RPMTAG_POSTUN";
+	case RPMTAG_POSTTRANS:
+		return "RPMTAG_POSTTRANS";
 	case RPMTAG_PREIN:
 		return "RPMTAG_PREIN";
+	case RPMTAG_PRETRANS:
+		return "RPMTAG_PRETRANS";
 	case RPMTAG_PREUN:
 		return "RPMTAG_PREUN";
 	case RPMTAG_POSTINPROG:
 		return "RPMTAG_POSTINPROG";
+	case RPMTAG_POSTTRANSPROG:
+		return "RPMTAG_POSTTRANSPROG";
 	case RPMTAG_POSTUNPROG:
 		return "RPMTAG_POSTUNPROG";
 	case RPMTAG_FILEDIGESTALGO:

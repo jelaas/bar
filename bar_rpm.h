@@ -242,6 +242,10 @@ struct indexentry {
 #define RPMTAG_FILEDEPENDSX          1143 /* i[] */
 #define RPMTAG_FILEDEPENDSN          1144 /* i[] */
 #define RPMTAG_DEPENDSDICT           1145
+#define RPMTAG_PRETRANS              1151 /* s */
+#define RPMTAG_POSTTRANS             1152 /* s */
+#define RPMTAG_PRETRANSPROG          1153 /* s[] */
+#define RPMTAG_POSTTRANSPROG         1154 /* s[] */
 #define RPMTAG_FILEDIGESTALGO        5011
 
 /* Exported File Attributes (ie RPMTAG_FILEFLAGS) */
