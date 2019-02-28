@@ -978,7 +978,7 @@ static int bar_create(const char *archive, struct jlhead *files, int *err)
 		jl_append(rpm->tags, tag);
 	}
 
-	fd = open(archive, O_RDWR|O_CREAT|O_TRUNC, 0644);
+	fd = open(archive, O_RDWR|O_CREAT|O_TRUNC, 0666);
 	if(fd == -1) return -1;
 
 	strncpy(rpm->lead.name, conf.tag.name, sizeof(rpm->lead)-1);
