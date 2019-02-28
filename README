@@ -51,6 +51,7 @@ bar [-hriclxv] archive-file [path ..]
  config::               Mark as configfile
  noreplace::            Mark as configfile and not to be replaced
  missingok::            Mark as missingok
+ override::             Override one previous file with same name
  owner@USER:GROUP::     Specify owner of files
  prefix/PATH::          Add path prefix
  r::                    Recursive descent into path

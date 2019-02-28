@@ -63,7 +63,7 @@ struct {
 
 struct filespec {
 	uint32_t flags;
-	int recursive;
+	int recursive, override;
 	char *user, *group, *prefix;
 };
 
@@ -1164,6 +1164,17 @@ static int file_new(struct jlhead *files, const char *fn, int create, struct fil
 		fprintf(stderr, "bar: Added file: %s md5sum: %s\n", f->name, f->md5);
 	}
 
+	if(spec->override) {
+		struct jliter iter;
+		struct cpio_file *tmpf;
+		for(tmpf=jl_iter_init(&iter, files);tmpf;tmpf=jl_iter(&iter)) {
+			if(strcmp(f->normalized_name, tmpf->normalized_name)==0) {
+				jl_del(tmpf);
+				break;
+			}
+		}
+	}
+
 	if(spec->recursive && S_ISDIR(f->stat.st_mode)) {
 		DIR *dir;
 		struct dirent *ent;
@@ -1385,6 +1396,7 @@ int main(int argc, char **argv)
 		       " config::               Mark as configfile\n"
 		       " noreplace::            Mark as configfile and not to be replaced\n"
 		       " missingok::            Mark as missingok\n"
+		       " override::             Override one previous file with same name\n"
 		       " owner@USER:GROUP::     Specify owner of files\n"
 		       " prefix/PATH::          Add path prefix\n"
 		       " r::                    Recursive descent into path\n"
@@ -1510,6 +1522,7 @@ int main(int argc, char **argv)
 		spec.group = (void*)0;
 		spec.prefix = (void*)0;
 		spec.recursive = conf.recursive;
+		spec.override = 0;
 		p = argv[i];
 		while(1) {
 			if(!strncmp(p, "config::", 8)) {
@@ -1535,6 +1548,11 @@ int main(int argc, char **argv)
 			if(!strncmp(p, "nor::", 5)) {
 				spec.recursive = 0;
 				p+=5;
+				continue;
+			}
+			if(!strncmp(p, "override::", 10)) {
+				spec.override = 1;
+				p+=10;
 				continue;
 			}
 			if(!strncmp(p, "owner@", 6)) {
