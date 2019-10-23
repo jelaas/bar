@@ -58,12 +58,13 @@ struct {
 	} tag;
 	struct logcb log;
 	struct bar_options opt;
+	int skip;
 	struct jlhead *requires;
 } conf;
 
 struct filespec {
 	uint32_t flags;
-	int recursive, override;
+	int recursive, override, skip;
 	char *user, *group, *prefix;
 };
 
@@ -1001,13 +1002,15 @@ static int bar_create(const char *archive, struct jlhead *files, int *err)
 	return 0;
 }
 
-static int file_new(struct jlhead *files, const char *fn, int create, struct filespec *spec)
+static int file_new(struct jlhead *files, const char *fn, int create, struct filespec *spec, int skip)
 {
 	struct cpio_file *f;
 	int fd;
 	ssize_t n;
 	unsigned char buf[PATH_MAX];
 	struct digest d;
+	
+	if(conf.verbose > 2) printf("skip = '%d'\n", skip);
 	
 	f = malloc(sizeof(struct cpio_file));
 	if(!f) {
@@ -1183,9 +1186,11 @@ static int file_new(struct jlhead *files, const char *fn, int create, struct fil
 			fprintf(stderr, "bar: recursive decent into directory %s\n", f->name);
 		}
 
-		if(jl_ins(files, f)) {
-			fprintf(stderr, "bar: list insert failed for %s\n", f->name);
-			return -1;
+		if(skip < 1) {
+			if(jl_ins(files, f)) {
+				fprintf(stderr, "bar: list insert failed for %s\n", f->name);
+				return -1;
+			}
 		}
 		
 		if(!(dir = opendir(fn))) {
@@ -1203,7 +1208,7 @@ static int file_new(struct jlhead *files, const char *fn, int create, struct fil
 			}
 			
 			snprintf((char*)buf, sizeof(buf), "%s/%s", fn, ent->d_name);
-			if(file_new(files, (char*)buf, create, spec)) {
+			if(file_new(files, (char*)buf, create, spec, skip-1)) {
 				fprintf(stderr, "bar: Failed to add file %s\n", buf);
 				closedir(dir);
 				return -1;
@@ -1213,9 +1218,11 @@ static int file_new(struct jlhead *files, const char *fn, int create, struct fil
 		return 0;
 	}
 
-	if(jl_ins(files, f)) {
-		fprintf(stderr, "bar: list insert failed for %s\n", f->name);
-		return -1;
+	if((!S_ISDIR(f->stat.st_mode)) || (skip < 1)) {
+		if(jl_ins(files, f)) {
+			fprintf(stderr, "bar: list insert failed for %s\n", f->name);
+			return -1;
+		}
 	}
 	return 0;
 }
@@ -1376,6 +1383,7 @@ int main(int argc, char **argv)
 		       " --posttrans <string>   post transaction script\n"
 		       " --release <string>     [current date and time YYYYMMDD.HHMMSS]\n"
 		       " --require <pkgname> <pkgversion>\n"
+		       " --skip <int>           number of directory levels to skip\n"
 		       " --summary <string>     [None]\n"
 		       " --version <string>     [0]\n"
 		       "\n"
@@ -1398,6 +1406,7 @@ int main(int argc, char **argv)
 		       " missingok::            Mark as missingok\n"
 		       " override::             Override one previous file with same name\n"
 		       " owner@USER:GROUP::     Specify owner of files\n"
+		       " skip@N::               Skip N directory levels\n"
 		       " prefix/PATH::          Add path prefix\n"
 		       " r::                    Recursive descent into path\n"
 		       " nor::                  No recursive descent into path\n"
@@ -1445,6 +1454,7 @@ int main(int argc, char **argv)
 		conf.tag.summary = dequote(conf.tag.summary);
 	while(jelopt(argv, 0, "pkginfo", NULL, &err)) conf.opt.pkginfo=conf.verbose=1;
 	while(jelopt_int(argv, 0, "printtag", &conf.opt.printtag, &err));
+	while(jelopt_int(argv, 0, "skip", &conf.skip, &err));
 	while(jelopt(argv, 0, "nosum", NULL, &err)) conf.opt.ignore_chksum=1;
 	while(jelopt(argv, 0, "nosync", NULL, &err)) conf.opt.sync=0;
 	while(jelopt(argv, 0, "prefix", &conf.opt.prefix, &err)) {
@@ -1523,6 +1533,7 @@ int main(int argc, char **argv)
 		spec.prefix = (void*)0;
 		spec.recursive = conf.recursive;
 		spec.override = 0;
+		spec.skip = -1;
 		p = argv[i];
 		while(1) {
 			if(!strncmp(p, "config::", 8)) {
@@ -1553,6 +1564,15 @@ int main(int argc, char **argv)
 			if(!strncmp(p, "override::", 10)) {
 				spec.override = 1;
 				p+=10;
+				continue;
+			}
+			if(!strncmp(p, "skip@", 5)) {
+				p+=5;
+				spec.skip = atoi(p);
+				p = strstr(p, "::");
+				if(!p) break;
+				p += 2;
+				if(conf.verbose > 2) printf("spec.skip = '%d'\n", spec.skip);
 				continue;
 			}
 			if(!strncmp(p, "owner@", 6)) {
@@ -1589,7 +1609,7 @@ int main(int argc, char **argv)
 				if(conf.verbose > 2) printf("spec.prefix = '%s'\n", spec.prefix);
 				continue;
 			}
-			if(file_new(files, p, conf.create, &spec)) {
+			if(file_new(files, p, conf.create, &spec, spec.skip>=0?spec.skip:conf.skip)) {
 				fprintf(stderr, "bar: Failed to add file %s. Aborting.\n", argv[i]);
 				exit(1);
 			}
