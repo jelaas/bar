@@ -65,42 +65,51 @@ static ssize_t gzip_read(struct zstream *z, void *buf, size_t size)
 static ssize_t xz_read(struct zstream *z, void *buf, size_t size)
 {
 	size_t avail, copysize;
+	int iter = 2;
 	lzma_ret ret;
 	lzma_action action = LZMA_RUN;
 
 	if(z->xz.eof) action = LZMA_FINISH;
 	
-	if (z->xz.stream.avail_in == 0 && (!z->xz.eof)) {
-		z->xz.stream.next_in = z->xz.inbuf;
-		z->xz.stream.avail_in = read(z->xz.fd, z->xz.inbuf, z->xz.bufsize);
-		if(z->xz.stream.avail_in < 0) {
-			/* read error */
-			return -1;
+	while(iter > 0) {
+		if (z->xz.stream.avail_in == 0 && (!z->xz.eof)) {
+			z->xz.stream.next_in = z->xz.inbuf;
+			z->xz.stream.avail_in = read(z->xz.fd, z->xz.inbuf, z->xz.bufsize);
+			if(z->xz.stream.avail_in < 0) {
+				/* read error */
+				return -1;
+			}
+			if(z->xz.stream.avail_in == 0) {
+				/* EOF */
+				z->xz.eof = 1;
+				z->xz.stream.avail_in = 0;
+				action = LZMA_FINISH;
+				iter = 0;
+			}
 		}
-		if(z->xz.stream.avail_in == 0) {
-			/* EOF */
-			z->xz.eof = 1;
-			z->xz.stream.avail_in = 0;
-			action = LZMA_FINISH;
+		ret = lzma_code(&z->xz.stream, action);
+		if (ret != LZMA_OK) {
+			if(ret == LZMA_MEM_ERROR) return -3;
+			if(ret == LZMA_FORMAT_ERROR) return -4;
+			if(ret == LZMA_OPTIONS_ERROR) return -5;
+			if(ret == LZMA_DATA_ERROR) return -6;
+			if(ret == LZMA_BUF_ERROR) return -7;
+			if(ret == LZMA_PROG_ERROR) return -8;
+			if (ret != LZMA_STREAM_END) return -2;
 		}
-	}
-	ret = lzma_code(&z->xz.stream, action);
-	if (ret != LZMA_OK) {
-		if (ret != LZMA_STREAM_END) {
-			return -2;
+		avail = z->xz.bufsize - z->xz.stream.avail_out;
+		if (avail) {
+			copysize = avail;
+			if(copysize > size) {
+				copysize = size;
+			}
+			memcpy(buf, z->xz.outbuf, copysize);
+			memmove(z->xz.outbuf, z->xz.outbuf + copysize, avail - copysize);
+			z->xz.stream.next_out = z->xz.outbuf + (avail - copysize);
+			z->xz.stream.avail_out = z->xz.bufsize - (avail - copysize);
+			return copysize;
 		}
-	}
-	avail = z->xz.bufsize - z->xz.stream.avail_out;
-	if (avail) {
-		copysize = avail;
-		if(copysize > size) {
-			copysize = size;
-		}
-		memcpy(buf, z->xz.outbuf, copysize);
-		memmove(z->xz.outbuf, z->xz.outbuf + copysize, avail - copysize);
-		z->xz.stream.next_out = z->xz.outbuf + (avail - copysize);
-		z->xz.stream.avail_out = z->xz.bufsize - (avail - copysize);
-		return copysize;
+		iter--;
 	}
 
 	return 0;
