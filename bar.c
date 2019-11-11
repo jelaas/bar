@@ -1020,7 +1020,8 @@ static int file_new(struct jlhead *files, const char *fn, int create, struct fil
 	}
 	
 	f->name = strdup(fn);
-	f->fileflags = spec->flags;
+	/* default value of fileflags. regular files will use the full spec */
+	f->fileflags = spec->flags & ~(RPMFILE_CONFIG|RPMFILE_NOREPLACE);
 	
 	/* normalize name to always start with '/' */
 	if(*fn != '/') {
@@ -1139,6 +1140,8 @@ static int file_new(struct jlhead *files, const char *fn, int create, struct fil
 	}
 	
 	if(S_ISREG(f->stat.st_mode)) {
+		/* let regular files use config and noreplace */
+		f->fileflags = spec->flags;
 		if(conf.verbose > 2) {
 			fprintf(stderr, "bar: processing regular file %s\n", f->name);
 		}
