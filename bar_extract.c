@@ -415,76 +415,85 @@ static int rpm_sig_read(const struct logcb *log, int fd, struct rpm *rpm)
 	 */
 	rpm->headeroffset = lseek(fd, 0, SEEK_CUR);
 	
-	jl_foreach(entries, entry) {
-		char buf[5120];
+	{
+		char *buf;
+		size_t bufsize = 10*1024;
 
-		if(log && log->level > 3)
-			log->logln("Entry: %d [%s] type: %s offset: %d count: %d",
-				ntohl(entry->tag), sigstr(ntohl(entry->tag)),
-				hdrtypestr(ntohl(entry->type)), ntohl(entry->offset), ntohl(entry->count));
-
-		tag = malloc(sizeof(struct tag));
-		if(!tag) {
-			if(log) log->logln("Failed to allocate memory for tag");
+		buf = malloc(bufsize);
+		if(!buf) {
+			if(log) log->logln("Failed to allocate memory for signature entries");
 			return -1;
 		}
-		memset(tag, 0, sizeof(struct tag));
-		tag->tag = ntohl(entry->tag);
-		tag->type = ntohl(entry->type);
-		if(ntohl(entry->count) >= ((sizeof(buf)-2)/2)) {
-			if(log) log->logln("Signature entry too large: %d. max %d allowed", ntohl(entry->count),
-				(sizeof(buf)-2)/2);
-			entry->count = htonl((sizeof(buf)-2)/2);
-		}
-		if(ntohl(entry->type) == HDRTYPE_BIN) {
-			unsigned char *p;
-			char *b;
-			b = buf;
-			for(p=(unsigned char*) store + ntohl(entry->offset);
-			    p<(unsigned char*)(store + ntohl(entry->offset)+ntohl(entry->count));
-			    p++) {
-				sprintf(b, "%02x", *p);
-				b+=2;
-			}
-			tag->value = strdup(buf);
-		}
-		if(ntohl(entry->type) == HDRTYPE_STRING) {
-			tag->value = strdup(store + ntohl(entry->offset));
-		}
-		if(ntohl(entry->type) == HDRTYPE_STRARRAY) {
-			char *b, *p;
-			int n, len=0;
-                        b = buf;
-			p = store + ntohl(entry->offset);
-			for(i=0;i<ntohl(entry->count);i++) {
-				n = strlen(p);
-				len += n;
-				len++;
-				p += n;
-				p++;
-			}
-			tag->value=malloc(len+1);
-			if(!tag->value) {
-				if(log) log->logln("Failed to allocate memory for tag value");
+		
+		jl_foreach(entries, entry) {
+			if(log && log->level > 3)
+				log->logln("Entry: %d [%s] type: %s offset: %d count: %d",
+					   ntohl(entry->tag), sigstr(ntohl(entry->tag)),
+					   hdrtypestr(ntohl(entry->type)), ntohl(entry->offset), ntohl(entry->count));
+			
+			tag = malloc(sizeof(struct tag));
+			if(!tag) {
+				if(log) log->logln("Failed to allocate memory for tag");
 				return -1;
 			}
-			b = tag->value;
-			p = store + ntohl(entry->offset);
-			for(i=0;i<ntohl(entry->count);i++) {
-				n = sprintf(b, "%s\n", p);
-				b += n;
-				p += (n-1);
-				p++;
+			memset(tag, 0, sizeof(struct tag));
+			tag->tag = ntohl(entry->tag);
+			tag->type = ntohl(entry->type);
+			if(ntohl(entry->count) >= ((bufsize-2)/2)) {
+				if(log) log->logln("Signature entry too large: %d. max %d allowed", ntohl(entry->count),
+						   (bufsize-2)/2);
+				entry->count = htonl((bufsize-2)/2);
 			}
+			if(ntohl(entry->type) == HDRTYPE_BIN) {
+				unsigned char *p;
+				char *b;
+				b = buf;
+				for(p=(unsigned char*) store + ntohl(entry->offset);
+				    p<(unsigned char*)(store + ntohl(entry->offset)+ntohl(entry->count));
+				    p++) {
+					sprintf(b, "%02x", *p);
+					b+=2;
+				}
+				tag->value = strdup(buf);
+			}
+			if(ntohl(entry->type) == HDRTYPE_STRING) {
+				tag->value = strdup(store + ntohl(entry->offset));
+			}
+			if(ntohl(entry->type) == HDRTYPE_STRARRAY) {
+				char *b, *p;
+				int n, len=0;
+				b = buf;
+				p = store + ntohl(entry->offset);
+				for(i=0;i<ntohl(entry->count);i++) {
+					n = strlen(p);
+					len += n;
+					len++;
+					p += n;
+					p++;
+				}
+				tag->value=malloc(len+1);
+				if(!tag->value) {
+					if(log) log->logln("Failed to allocate memory for tag value");
+					return -1;
+				}
+				b = tag->value;
+				p = store + ntohl(entry->offset);
+				for(i=0;i<ntohl(entry->count);i++) {
+					n = sprintf(b, "%s\n", p);
+					b += n;
+					p += (n-1);
+					p++;
+				}
+			}
+			if(ntohl(entry->type) == HDRTYPE_I18NSTRING) {
+				tag->value = strdup(store + ntohl(entry->offset));
+			}
+			if(ntohl(entry->type) == HDRTYPE_INT32) {
+				sprintf(buf, "%d", ntohl(*(int32_t*)(store + ntohl(entry->offset))));
+				tag->value = strdup(buf);
+			}
+			if(tag->value) jl_append(rpm->sigtags, tag);
 		}
-		if(ntohl(entry->type) == HDRTYPE_I18NSTRING) {
-			tag->value = strdup(store + ntohl(entry->offset));
-		}
-		if(ntohl(entry->type) == HDRTYPE_INT32) {
-			sprintf(buf, "%d", ntohl(*(int32_t*)(store + ntohl(entry->offset))));
-			tag->value = strdup(buf);
-		}
-		if(tag->value) jl_append(rpm->sigtags, tag);
 	}
 	
 	if(log && log->level > 2) 
