@@ -416,7 +416,7 @@ static int rpm_sig_read(const struct logcb *log, int fd, struct rpm *rpm)
 	rpm->headeroffset = lseek(fd, 0, SEEK_CUR);
 	
 	jl_foreach(entries, entry) {
-		char buf[2048];
+		char buf[5120];
 
 		if(log && log->level > 3)
 			log->logln("Entry: %d [%s] type: %s offset: %d count: %d",
