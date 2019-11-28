@@ -233,6 +233,8 @@ static const char *sigstr(int t)
 		return "SIGTAG_HEADERSIGNATURES";
 	case SIGTAG_SHA1:
 		return "SIGTAG_SHA1";
+	case SIGTAG_RESERVEDSPACE:
+		return "SIGTAG_RESERVEDSPACE";
 	}
 	return "";
 }

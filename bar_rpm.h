@@ -96,6 +96,7 @@ struct header {
 #define SIGTAG_PGP          1002
 #define SIGTAG_MD5          1004
 #define SIGTAG_PAYLOADSIZE  1007
+#define SIGTAG_RESERVEDSPACE 1008
 
 struct indexentry {
 	uint32_t tag;
