@@ -62,7 +62,7 @@ ssize_t cpio_write(const struct logcb *log, struct zstream *z, const struct cpio
 		memcpy(header.c_filesize, buf, 8);
 	}
 	if(S_ISLNK(statb.st_mode)) {
-		sprintf(buf, "%08X", (unsigned int) statb.st_size+1);
+		sprintf(buf, "%08X", (unsigned int) statb.st_size);
 		memcpy(header.c_filesize, buf, 8);
 	}
 	
@@ -136,8 +136,6 @@ ssize_t cpio_write(const struct logcb *log, struct zstream *z, const struct cpio
 			if(log) log->logln("Error reading link %s", f->name);
 			return -1;
 		}
-		((char*)fbuf)[count] = 0; /* zero terminate link string */
-		count++;
 		n = z->write(z, fbuf, count);
 		if(n <= 0) return -1;
 		uncompressed_size += n;
@@ -145,6 +143,7 @@ ssize_t cpio_write(const struct logcb *log, struct zstream *z, const struct cpio
 		
 		n = ((count + 3) & ~3) - count;
 		if(n) {
+			if(log && log->level > 3) log->logln("Count %d computes to %d padding", count, n);
 			memset(buf, 0, sizeof(buf));
 			n = z->write(z, buf, n);
 			if(n <= 0) return -1;
@@ -173,6 +172,7 @@ int cpio_read(const struct logcb *log, struct zstream *z, struct cpio_host *cpio
 	
 	if(strncmp(header.c_magic, CPIOMAGIC, 6)) {
 		if(log) log->logln("Wrong cpio magic");
+		if(log && log->level > 3) log->logln("Magic is: %02x%02x%02x%02x%02x%02x", header.c_magic[0], header.c_magic[1], header.c_magic[2], header.c_magic[3], header.c_magic[4], header.c_magic[5]);
 		return -1;
 	}
 	strncpy(cpio->c_magic, header.c_magic, 6);

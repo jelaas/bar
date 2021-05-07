@@ -987,15 +987,15 @@ int bar_extract(const struct logcb *log, const char *archive, struct jlhead *fil
 				}
 				if(!strcmp(cpio.mode,"l")) {
 					char *path;
-					path = malloc(cpio.c_filesize_a);
+					path = malloc(cpio.c_filesize_a+1);
 					if(!path) {
 						if(log) log->logln("Failed to alloc link content memory for %s", cpio.name);
 						return -1;
 					}
 					if(log && log->level > 1) {
 						if(cpio.c_filesize_a) {
-							if(log) log->logln("Reading %llu bytes of link contents for %s",
-								cpio.c_filesize_a, cpio.name);
+							if(log) log->logln("Reading %llu bytes of link contents for %s (%llu)",
+									   cpio.c_filesize_a, cpio.name, cpio.c_filesize);
 						}
 					}
 					n = z.read(&z, path, cpio.c_filesize_a);
@@ -1003,6 +1003,7 @@ int bar_extract(const struct logcb *log, const char *archive, struct jlhead *fil
 						if(log) log->logln("Failed to read symlink for: %s", cpio.name);
 						return -1;
 					}
+					path[cpio.c_filesize] = 0;
 					rpm->uncompressed_size += n;
 					unlink(cpio.name);
 					symlink(path, cpio.name);
