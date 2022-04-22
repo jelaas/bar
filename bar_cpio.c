@@ -54,7 +54,7 @@ ssize_t cpio_write(const struct logcb *log, struct zstream *z, const struct cpio
 	sprintf(buf, "%08X", statb.st_gid);
 	memcpy(header.c_gid, buf, 8);
 	
-	sprintf(buf, "%08X", strlen(f->cpio_name));
+	sprintf(buf, "%08X", strlen(f->cpio_name)+1);
 	memcpy(header.c_namesize, buf, 8);
 
 	if(S_ISREG(statb.st_mode)) {
@@ -72,9 +72,9 @@ ssize_t cpio_write(const struct logcb *log, struct zstream *z, const struct cpio
 	
 	if(log && log->level > 1)
 		log->logln( "Aligned [4] %d to %d",
-			sizeof(header)+strlen(f->cpio_name),
-			(sizeof(header)+strlen(f->cpio_name)+3)&~3);
-	n = z->write(z, f->cpio_name, ((sizeof(header)+strlen(f->cpio_name)+3)&~3) - sizeof(header));
+			    sizeof(header)+(strlen(f->cpio_name)+1),
+			    (sizeof(header)+(strlen(f->cpio_name)+1)+3)&~3);
+	n = z->write(z, f->cpio_name, ((sizeof(header)+(strlen(f->cpio_name)+1)+3)&~3) - sizeof(header));
 	if(n <= 0) return -1;
 	uncompressed_size += n;
 	
