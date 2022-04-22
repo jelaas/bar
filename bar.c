@@ -181,9 +181,9 @@ static int rpm_payload_write(int fd, struct rpm *rpm, struct jlhead *files)
 		rpm->uncompressed_size += n;
 	}
 	memset(&trailer, 0, sizeof(trailer));
-	trailer.name = "TRAILER!!!";
-	trailer.normalized_name = "TRAILER!!!";
-	trailer.cpio_name = "TRAILER!!!";
+	trailer.name = "TRAILER!!!\x00\x00\x00";
+	trailer.normalized_name = "TRAILER!!!\x00\x00\x00";
+	trailer.cpio_name = "TRAILER!!!\x00\x00\x00";
 	if((n=cpio_write(&conf.log, &z, &trailer, &rpm->sumsize)) == -1) {
 		fprintf(stderr, "bar: Error writing cpio header for trailer\n");
 		return -1;
