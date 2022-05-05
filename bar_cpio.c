@@ -227,6 +227,18 @@ int cpio_read(const struct logcb *log, struct zstream *z, struct cpio_host *cpio
 		if(log) log->logln("Error reading name from cpio.");
 		return -1;
 	}
+	if(strncmp(cpio->name+2, "../", 3)) {
+		if(log) log->logln("cpio name starts with '../'.");
+		return -1;
+	}
+	if(strchr(cpio->name+2, 0x1B)) {
+		if(log) log->logln("cpio name contains ESC 0x1B.");
+		return -1;
+	}
+	if(strstr(cpio->name+2, "/../")) {
+		if(log) log->logln("cpio name contains '/../'.");
+		return -1;
+	}
 	if(log && log->level > 3) log->logln("raw cpioname: [%s]",
 					     cpio->name+2);
 	if(strcmp(cpio->name+2, "TRAILER!!!")==0)
