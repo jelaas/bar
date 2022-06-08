@@ -227,7 +227,7 @@ int cpio_read(const struct logcb *log, struct zstream *z, struct cpio_host *cpio
 		if(log) log->logln("Error reading name from cpio.");
 		return -1;
 	}
-	if(strncmp(cpio->name+2, "../", 3)) {
+	if(!strncmp(cpio->name+2, "../", 3)) {
 		if(log) log->logln("cpio name starts with '../'.");
 		return -1;
 	}
