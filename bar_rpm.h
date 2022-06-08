@@ -91,6 +91,7 @@ struct header {
 #define SIGTAG_HEADERSIGNATURES 62
 #define SIGTAG_RSA           268
 #define SIGTAG_SHA1          269
+#define SIGTAG_SHA256        273
 #define SIGTAG_SIZE         1000
 #define SIGTAG_LEMD5_1      1001
 #define SIGTAG_PGP          1002
@@ -106,6 +107,7 @@ struct indexentry {
 };
 
 #define RPMTAG_HEADERI18NTABLE           100
+#define RPMTAG_SHA256HEADER              273 /* s */
 #define RPMTAG_NAME                     1000
 #define RPMTAG_VERSION                  1001
 #define RPMTAG_RELEASE                  1002
@@ -248,6 +250,9 @@ struct indexentry {
 #define RPMTAG_PRETRANSPROG          1153 /* s[] */
 #define RPMTAG_POSTTRANSPROG         1154 /* s[] */
 #define RPMTAG_FILEDIGESTALGO        5011
+#define RPMTAG_PAYLOADDIGEST         5092 /* s[] */
+#define RPMTAG_PAYLOADDIGESTALGO     5093 /* i */
+#define RPMTAG_PAYLOADDIGESTALT      5097 /* s[] */
 
 /* Exported File Attributes (ie RPMTAG_FILEFLAGS) */
 #define RPMFILE_NONE              0
