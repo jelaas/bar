@@ -106,6 +106,7 @@ struct indexentry {
 	uint32_t count;
 };
 
+#define RPMTAG_HEADERIMMUTABLE            63 /*!< Original image. */
 #define RPMTAG_HEADERI18NTABLE           100
 #define RPMTAG_SHA256HEADER              273 /* s */
 #define RPMTAG_NAME                     1000

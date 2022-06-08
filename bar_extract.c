@@ -237,6 +237,10 @@ static const char *sigstr(int t)
 		return "SIGTAG_SHA256";
 	case SIGTAG_RESERVEDSPACE:
 		return "SIGTAG_RESERVEDSPACE";
+	case SIGTAG_PGP:
+		return "SIGTAG_PGP";
+	case SIGTAG_RSA:
+		return "SIGTAG_RSA";
 	}
 	return "";
 }
@@ -336,6 +340,8 @@ static const char *tagstr(int t)
 		return "RPMTAG_PAYLOADDIGESTALGO";
 	case RPMTAG_PAYLOADDIGESTALT:
 		return "RPMTAG_PAYLOADDIGESTALT";
+	case RPMTAG_HEADERIMMUTABLE:
+		return "RPMTAG_HEADERIMMUTABLE";
 	}
 	return "";
 }
