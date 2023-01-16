@@ -154,6 +154,7 @@ static ssize_t zstd_read(struct zstream *z, void *buf, size_t size)
 			total += copysize;
 			if (copysize < z->zstd.output.pos ) {
 				memmove(z->zstd.outbuf, z->zstd.outbuf + copysize, z->zstd.output.pos - copysize);
+				z->zstd.output.pos -= copysize;
 			} else {
 				z->zstd.output.pos = 0;
 			}
@@ -174,6 +175,7 @@ static ssize_t zstd_read(struct zstream *z, void *buf, size_t size)
 		z->zstd.input.size = got;
 		z->zstd.input.pos = 0;
 	}
+//	printf("zstd_read = %u. insize %u, inpos %u, utsize %u, utpos %u \n", total, z->zstd.input.size, z->zstd.input.pos, z->zstd.output.size, z->zstd.output.pos);
 	return total;
 }
 
