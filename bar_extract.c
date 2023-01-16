@@ -858,6 +858,8 @@ int bar_extract(const struct logcb *log, const char *archive, struct jlhead *fil
 	rpm->compressor = (void*) 0;
 	if(strcmp(tag(rpm, RPMTAG_PAYLOADCOMPRESSOR, ""), "xz") == 0)
 		rpm->compressor = "xz";
+	if(strcmp(tag(rpm, RPMTAG_PAYLOADCOMPRESSOR, ""), "zstd") == 0)
+		rpm->compressor = "zstd";
 	if(strcmp(tag(rpm, RPMTAG_PAYLOADCOMPRESSOR, "gzip"), "gzip") == 0)
 		rpm->compressor = "gzip";
 
