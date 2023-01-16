@@ -1,6 +1,6 @@
 Create and extract RPM archives.
 
-Supports extracting gzip and xz compressed archives.
+Supports extracting gzip, xz and zstd compressed archives.
 Can only generate MD5 checksums.
 Reads and verifies both MD5 and SHA256 checksums.
 
@@ -84,6 +84,7 @@ Examples:
 Dependencies:
 - zlib
 - xz (liblzma)
+- zstd
 - C compiler
 Thats all!
 
