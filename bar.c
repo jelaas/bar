@@ -671,7 +671,7 @@ static int bar_create(const char *archive, struct jlhead *files, int *err)
 	}
 	p = tag->value;
 	jl_foreach(files, f) {
-		sprintf(p, "%llu\n", f->stat.st_rdev);
+		sprintf(p, "%llu\n", (long long unsigned int) f->stat.st_rdev);
 		p += strlen(p);
 	}
 	jl_append(rpm->tags, tag);	
