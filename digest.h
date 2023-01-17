@@ -7,7 +7,7 @@
 
 struct digest  {
   int (*init)(struct digest *);
-  ssize_t (*update)(struct digest *, void *, size_t);
+  int (*update)(struct digest *, void *, size_t);
   int (*final)(struct digest *); /* result will be in 'sum' and 'hexstr' */
   union {
     MD5_CTX md5;
