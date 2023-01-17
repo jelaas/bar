@@ -1,6 +1,7 @@
 #ifndef BAR_RPM_H
 #define BAR_RPM_H
 
+#include <stdint.h>
 #include <sys/types.h>
 #include <unistd.h>
 

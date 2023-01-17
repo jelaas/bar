@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <stdio.h>
+#include <sys/sysmacros.h>
 
 #include "bar_cpio.h"
 
