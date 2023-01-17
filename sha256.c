@@ -262,10 +262,6 @@ void sha256_process_bytes (const void *buffer, size_t len, struct sha256_ctx *ct
 	}
 }
 
-/* Table with characters for base64 transformation.  */
-static const char b64t[64] =
-"./0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-
 #ifdef TEST
 static const struct
 {
