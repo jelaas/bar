@@ -1429,7 +1429,7 @@ int main(int argc, char **argv)
 	while(jelopt(argv, 0, "fuser", &conf.tag.fuser, &err));
 	while(jelopt(argv, 0, "license", &conf.tag.license, &err));
 	while(jelopt(argv, 0, "name", &conf.tag.name, &err));
-	while(jelopt(argv, 0, "os", &conf.tag.os, &err));
+	while(jelopt(argv, 0, "os", &conf.tag.os, &err)) {};
 	{
 		char *tmp;
 		while(jelopt(argv, 0, "quotechar", &tmp, &err))
