@@ -40,7 +40,7 @@ ssize_t cpio_write(const struct logcb *log, struct zstream *z, const struct cpio
 	
 	strncpy(header.c_magic, CPIOMAGIC, 6);
 
-	sprintf(buf, "%08X", statb.st_nlink);
+	sprintf(buf, "%08X", (unsigned int) statb.st_nlink);
 	memcpy(header.c_nlink, buf, 8);
 
 	sprintf(buf, "%08X", (unsigned int) statb.st_mtime);
@@ -55,7 +55,7 @@ ssize_t cpio_write(const struct logcb *log, struct zstream *z, const struct cpio
 	sprintf(buf, "%08X", statb.st_gid);
 	memcpy(header.c_gid, buf, 8);
 	
-	sprintf(buf, "%08X", strlen(f->cpio_name)+1);
+	sprintf(buf, "%08X", (unsigned int) strlen(f->cpio_name)+1);
 	memcpy(header.c_namesize, buf, 8);
 
 	if(S_ISREG(statb.st_mode)) {
