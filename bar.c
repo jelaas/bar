@@ -307,7 +307,7 @@ static int rpm_hdr_write(int fd, struct rpm *rpm, struct header *hdr, struct jlh
 			}
 			
 			if(conf.verbose > 2)
-				fprintf(stderr, "bar: Writing 32bit value to alignment: %d\n", ((storep-store)) % 4);
+				fprintf(stderr, "bar: Writing 32bit value to alignment: %ld\n", (long int) (((storep-store)) % 4));
 			
 			{
 				char *p;
@@ -337,7 +337,7 @@ static int rpm_hdr_write(int fd, struct rpm *rpm, struct header *hdr, struct jlh
 			}
 			
 			if(conf.verbose > 2)
-				fprintf(stderr, "bar: Writing 16bit value to alignment: %d\n", ((storep-store)) % 2);
+				fprintf(stderr, "bar: Writing 16bit value to alignment: %ld\n", (long int) (((storep-store)) % 2));
 			
 			{
 				char *p;
@@ -363,7 +363,7 @@ static int rpm_hdr_write(int fd, struct rpm *rpm, struct header *hdr, struct jlh
 			break;
 		}
 		if(conf.verbose > 2)
-			fprintf(stderr, "bar: Current store size: %d bytes\n", storep-store);
+			fprintf(stderr, "bar: Current store size: %ld bytes\n", (long int) (storep-store));
 	}
 
 	/* set size of store */
