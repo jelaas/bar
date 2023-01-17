@@ -370,14 +370,14 @@ static int rpm_hdr_write(int fd, struct rpm *rpm, struct header *hdr, struct jlh
 	hdr->size = htonl(storep-store);
 
 	if(conf.verbose > 2)
-		fprintf(stderr, "bar: Writing index header sized: %d bytes\n", sizeof(struct header));
+		fprintf(stderr, "bar: Writing index header sized: %lu bytes\n", (long unsigned int) sizeof(struct header));
 	if(write(fd, hdr, sizeof(struct header))!= sizeof(struct header)) {
 		fprintf(stderr, "bar: Failed to write signature header\n");
                 return -1;
 	}
 
 	if(conf.verbose > 2)
-		fprintf(stderr, "bar: Writing index sized: %d bytes\n", tags->len * sizeof(struct indexentry));
+		fprintf(stderr, "bar: Writing index sized: %lu bytes\n", (long unsigned int) (tags->len * sizeof(struct indexentry)));
 	write(fd, index, tags->len * sizeof(struct indexentry));
 	
 	/* align */
