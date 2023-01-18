@@ -60,6 +60,7 @@ struct {
 	struct bar_options opt;
 	int skip;
 	struct jlhead *requires;
+	char *compressor;
 } conf;
 
 struct filespec {
@@ -169,9 +170,9 @@ static int rpm_payload_write(int fd, struct rpm *rpm, struct jlhead *files)
 	int zfd;
 	
 	zfd = dup(fd);
-	zstream(&z, "gzip");
-	z.init(&z);
-	z.open(&z, zfd, "w");
+	zstream(&z, conf.compressor);
+	if(z.init(&z)) return -1;
+	if(z.open(&z, zfd, "w")) return -1;
 	jl_foreach(files, f) {
 		if(conf.verbose) printf("%s\n", f->normalized_name);
 		if((n=cpio_write(&conf.log, &z, f, &rpm->sumsize)) == -1) {
@@ -943,7 +944,7 @@ static int bar_create(const char *archive, struct jlhead *files, int *err)
 
 	/* RPMTAG_PAYLOADCOMPRESSOR */
 	tag = tag_new(RPMTAG_PAYLOADCOMPRESSOR);
-	tag->value = "gzip";
+	tag->value = conf.compressor;
 	jl_append(rpm->tags, tag);
 
 	/* RPMTAG_PAYLOADFLAGS 1126 */
@@ -1328,6 +1329,8 @@ int main(int argc, char **argv)
 	conf.quotechar = '%';
 	conf.opt.sync = 1;
 	
+	conf.compressor = "gzip";
+	
 	if(jelopt(argv, 0, "examples", 0, &err)) {
 		printf("Examples: \n"
 		       " Listing contents:\n"
@@ -1360,13 +1363,14 @@ int main(int argc, char **argv)
 	if(jelopt(argv, 'h', "help", 0, &err)) {
 	usage:
 		printf("bar [-hriclxv] archive-file [path ..]\n"
-		       " h -- help\n"
-		       " r -- recursive\n"
-		       " c -- create\n"
-		       " x -- extract\n"
-		       " l -- list\n"
-		       " i -- show header info\n"
-		       " v -- verbose\n"
+		       " h      -- help\n"
+		       " r      -- recursive\n"
+		       " c      -- create\n"
+		       " x      -- extract\n"
+		       " l      -- list\n"
+		       " i      -- show header info\n"
+		       " v      -- verbose\n"
+		       " --zstd -- user zstandard for compression\n"
 		       "\n"
 		       " Overriding default tag values:\n"
 		       " --arch <archname>      [from uname]\n"
@@ -1423,6 +1427,7 @@ int main(int argc, char **argv)
 	while(jelopt(argv, 'x', "extract", 0, &err)) conf.extract=1;
 	while(jelopt(argv, 'v', "verbose", 0, &err)) conf.verbose++;
 	while(jelopt(argv, 'V', "verify", 0, &err)) conf.verify=1;
+	while(jelopt(argv, 0, "zstd", 0, &err)) conf.compressor = "zstd";
 	while(jelopt(argv, 0, "arch", &conf.tag.arch, &err));
 	while(jelopt(argv, 0, "buildtime", &conf.tag.buildtime, &err));
 	while(jelopt(argv, 0, "fgroup", &conf.tag.fgroup, &err));

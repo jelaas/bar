@@ -21,6 +21,7 @@ struct zstream  {
     gzFile gzip;
     struct {
       ZSTD_DCtx *ctx;
+      ZSTD_CCtx *cctx;
       int fd, eof;
       void *inbuf, *outbuf;
       size_t inbufsize, outbufsize;

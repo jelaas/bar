@@ -24,12 +24,7 @@ static int xz_init(struct zstream *z)
 static int zstd_init(struct zstream *z)
 {
 	z->zstd.ctx = 0;
-	z->zstd.inbufsize = ZSTD_DStreamInSize();
-	z->zstd.inbuf = malloc(z->zstd.inbufsize);
-	if(!z->zstd.inbuf) return -1;
-	z->zstd.outbufsize = ZSTD_DStreamOutSize();
-	z->zstd.outbuf = malloc(z->zstd.outbufsize);
-	if(!z->zstd.outbuf) return -1;
+	z->zstd.cctx = 0;
 	return 0;
 }
 
@@ -71,17 +66,53 @@ static int xz_open(struct zstream *z, int fd, char *mode)
 
 static int zstd_open(struct zstream *z, int fd, char *mode)
 {
-	z->zstd.ctx = ZSTD_createDCtx();
-	if(!z->zstd.ctx) return -1;
 	z->zstd.fd = fd;
 	z->zstd.eof = 0;
-	z->zstd.output.dst = z->zstd.outbuf;
-	z->zstd.output.size = z->zstd.outbufsize;
+	z->zstd.output.size = 0;
 	z->zstd.output.pos = 0;
-	z->zstd.input.src = z->zstd.inbuf;
 	z->zstd.input.size = 0;
 	z->zstd.input.pos = 0;
-	return 0;
+	
+	if(*mode == 'r') {
+		z->zstd.inbufsize = ZSTD_DStreamInSize();
+		z->zstd.inbuf = malloc(z->zstd.inbufsize);
+		if(!z->zstd.inbuf) return -1;
+		z->zstd.outbufsize = ZSTD_DStreamOutSize();
+		z->zstd.outbuf = malloc(z->zstd.outbufsize);
+		if(!z->zstd.outbuf) return -1;
+		
+		z->zstd.ctx = ZSTD_createDCtx();
+		if(!z->zstd.ctx) return -1;
+		z->zstd.output.dst = z->zstd.outbuf;
+		z->zstd.output.size = z->zstd.outbufsize;
+		z->zstd.input.src = z->zstd.inbuf;
+
+		return 0;
+	}
+	if(*mode == 'w') {
+		size_t ret;
+		
+		z->zstd.inbufsize = ZSTD_CStreamInSize();
+		z->zstd.inbuf = malloc(z->zstd.inbufsize);
+		if(!z->zstd.inbuf) return -1;
+		z->zstd.outbufsize = ZSTD_CStreamOutSize();
+		z->zstd.outbuf = malloc(z->zstd.outbufsize);
+		if(!z->zstd.outbuf) return -1;
+		
+		z->zstd.cctx = ZSTD_createCCtx();
+		if(!z->zstd.cctx) return -1;
+		z->zstd.output.dst = z->zstd.outbuf;
+		z->zstd.output.size = z->zstd.outbufsize;
+		z->zstd.input.src = z->zstd.inbuf;
+		
+		ret = ZSTD_CCtx_setParameter(z->zstd.cctx, ZSTD_c_compressionLevel, 10);
+		if(ZSTD_isError(ret)) return -1;
+		ret = ZSTD_CCtx_setParameter(z->zstd.cctx, ZSTD_c_checksumFlag, 1);
+		if(ZSTD_isError(ret)) return -1;
+
+		return 0;
+	}
+	return -1;
 }
 
 static ssize_t gzip_read(struct zstream *z, void *buf, size_t size)
@@ -175,7 +206,6 @@ static ssize_t zstd_read(struct zstream *z, void *buf, size_t size)
 		z->zstd.input.size = got;
 		z->zstd.input.pos = 0;
 	}
-//	printf("zstd_read = %u. insize %u, inpos %u, utsize %u, utpos %u \n", total, z->zstd.input.size, z->zstd.input.pos, z->zstd.output.size, z->zstd.output.pos);
 	return total;
 }
 
@@ -191,7 +221,44 @@ static ssize_t xz_write(struct zstream *z, void *buf, size_t count)
 
 static ssize_t zstd_write(struct zstream *z, void *buf, size_t count)
 {
-	return -1;
+	size_t total=0, remaining, copysize;
+
+	/* count fits into inbuf */
+	if( (z->zstd.inbufsize - z->zstd.input.size) >= count ) {
+		memcpy(z->zstd.inbuf + z->zstd.input.size, buf, count );
+		z->zstd.input.size += count;
+		return count;
+	}
+	
+	while(total < count) {
+		/* compress what we can */
+		remaining = ZSTD_compressStream2(z->zstd.cctx, &z->zstd.output , &z->zstd.input, ZSTD_e_continue);
+		if(ZSTD_isError(remaining)) return -1;
+		
+		/* flush compressed output to fd */
+		write(z->zstd.fd, z->zstd.outbuf, z->zstd.output.pos);
+		z->zstd.output.pos = 0;
+		
+		/* If all input consumed, reset the input buffer */
+		if(z->zstd.input.size == z->zstd.input.pos) {
+			z->zstd.input.size = z->zstd.input.pos = 0;
+		}
+		/* flush consumed input */
+		if(z->zstd.input.pos) {
+			memmove(z->zstd.inbuf, z->zstd.inbuf + z->zstd.input.pos, z->zstd.input.size - z->zstd.input.pos);
+			z->zstd.input.size -= z->zstd.input.pos;
+			z->zstd.input.pos = 0;
+		}
+
+		/* append more input */
+		copysize = (z->zstd.inbufsize - z->zstd.input.size) >= (count - total) ? (count - total) : (z->zstd.inbufsize - z->zstd.input.size);
+		if(copysize) {
+			memcpy(z->zstd.inbuf + z->zstd.input.size, buf + total, copysize );
+			z->zstd.input.size += copysize;
+			total += copysize;
+		}
+	}
+	return count;
 }
 
 static int gzip_close(struct zstream *z)
@@ -211,9 +278,36 @@ static int xz_close(struct zstream *z)
 
 static int zstd_close(struct zstream *z)
 {
-	int rc = close(z->zstd.fd);
+	int rc;
+	size_t remaining;
+
+	if(z->zstd.cctx) {
+		while(z->zstd.input.pos < z->zstd.input.size) {
+			/* compress what we can */
+			remaining = ZSTD_compressStream2(z->zstd.cctx, &z->zstd.output , &z->zstd.input, ZSTD_e_continue);
+			if(ZSTD_isError(remaining)) return -1;
+			
+			/* flush compressed output to fd */
+			write(z->zstd.fd, z->zstd.outbuf, z->zstd.output.pos);
+			z->zstd.output.pos = 0;
+		}
+		while(1) {
+			remaining = ZSTD_compressStream2(z->zstd.cctx, &z->zstd.output , &z->zstd.input, ZSTD_e_end);
+			if(ZSTD_isError(remaining)) return -1;
+
+			/* flush compressed output to fd */
+			write(z->zstd.fd, z->zstd.outbuf, z->zstd.output.pos);
+			z->zstd.output.pos = 0;
+			
+			if(remaining == 0) break;
+		}
+	}
+
+	rc = close(z->zstd.fd);
 	z->zstd.fd = -1;
-	ZSTD_freeDCtx(z->zstd.ctx);
+	
+	if(z->zstd.ctx) ZSTD_freeDCtx(z->zstd.ctx);
+	if(z->zstd.cctx) ZSTD_freeCCtx(z->zstd.cctx);
 	return rc;
 }
 
