@@ -288,7 +288,7 @@ static int zstd_close(struct zstream *z)
 			if(ZSTD_isError(remaining)) return -1;
 			
 			/* flush compressed output to fd */
-			write(z->zstd.fd, z->zstd.outbuf, z->zstd.output.pos);
+			if(z->zstd.output.pos) write(z->zstd.fd, z->zstd.outbuf, z->zstd.output.pos);
 			z->zstd.output.pos = 0;
 		}
 		while(1) {
@@ -296,7 +296,7 @@ static int zstd_close(struct zstream *z)
 			if(ZSTD_isError(remaining)) return -1;
 
 			/* flush compressed output to fd */
-			write(z->zstd.fd, z->zstd.outbuf, z->zstd.output.pos);
+			if(z->zstd.output.pos) write(z->zstd.fd, z->zstd.outbuf, z->zstd.output.pos);
 			z->zstd.output.pos = 0;
 			
 			if(remaining == 0) break;
