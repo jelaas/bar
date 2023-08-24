@@ -421,7 +421,7 @@ static int rpm_sig_read(const struct logcb *log, int fd, struct rpm *rpm)
 	
 	i = (ntohl(rpm->sig.size)+7)&~0x7; /* adjust to even 8-byte boundary */
 	if(log && log->level > 1) log->logln("Aligned %d to %d", ntohl(rpm->sig.size), i);
-	if(log && log->level > 1) log->logln("Reading store sized %d bytes", i);
+	if(log && log->level > 1) log->logln("Reading signature store sized %d bytes", i);
 	if(read(fd, store, i)!=i) {
 		if(log) log->logln("Failed to read signature store");
 		return -1;
@@ -531,6 +531,15 @@ static int rpm_header_read(const struct logcb *log, int fd, struct rpm *rpm, int
 	struct jlhead *entries;
 	char *buf;
 	size_t bufsize = 2048;
+	struct digest d;
+	const char *sigtag_sha256;
+	
+	sigtag_sha256 =	sig(rpm, SIGTAG_SHA256);
+
+	if(digest(&d, "sha256")) {
+		if(log)	log->logln("SHA256Init failed.");
+		return -1;
+	}
 
 	if(log && log->level > 1) log->logln("Reading header sized %d", sizeof(struct header));
 	entries = jl_new();
@@ -546,8 +555,9 @@ static int rpm_header_read(const struct logcb *log, int fd, struct rpm *rpm, int
 						 HEADERMAGIC);
                 return -1;
         }
+	d.update(&d, &rpm->header, sizeof(struct header));
 	
-	if(log && log->level > 2) log->logln("Reading index sized %d",
+	if(log && log->level > 1) log->logln("Reading index sized %d",
 					     sizeof(struct indexentry)*ntohl(rpm->header.entries));
 	for(i=0;i<ntohl(rpm->header.entries);i++) {
 		entry = malloc(sizeof(struct indexentry));
@@ -559,6 +569,7 @@ static int rpm_header_read(const struct logcb *log, int fd, struct rpm *rpm, int
 			if(log) log->logln("Failed to read indexentries.");
 			return -1;
 		}
+		d.update(&d, entry, sizeof(struct indexentry));
 		jl_append(entries, entry);
 	}
 	
@@ -573,6 +584,17 @@ static int rpm_header_read(const struct logcb *log, int fd, struct rpm *rpm, int
 	if(read(fd, store, i)!=i) {
 		if(log) log->logln("Failed to read header store");
 		return -1;
+	}
+	d.update(&d, store, i);
+	d.final(&d);
+	if(*sigtag_sha256) {
+		if(strcmp(sigtag_sha256, d.hexstr)) {
+			if(log) log->logln("SHA256 checksum verification of header failed: %s %s", sigtag_sha256, d.hexstr);
+			return -1;
+		} else {
+			if(log && log->level > 1)
+				if(log) log->logln("SHA256 checksum verification of header succeeded.");
+		}
 	}
 
 	/*
@@ -810,25 +832,29 @@ int bar_extract(const struct logcb *log, const char *archive, struct jlhead *fil
 		ssize_t n;
 		unsigned char buf[1024];
 		struct digest d;
+		const char *sigtag_md5;
 
-		if(digest(&d, "md5")) {
-			if(log)	log->logln("MD5Init failed.");
-                        return -1;
-                }
-		while(1) {
-                        n = read(fd, buf, sizeof(buf));
-                        if(n < 1) break;
-                        d.update(&d, buf, n);
-                }
-		d.final(&d);
-		if(strcmp(sig(rpm, SIGTAG_MD5), d.hexstr)) {
-			if(log) log->logln("MD5sum verification failed: %s %s", sig(rpm, SIGTAG_MD5), d.hexstr);
-			return -1;
-		} else {
-			if(log && log->level > 2)
-				if(log) log->logln("MD5sum verification succeeded.");
+		sigtag_md5 = sig(rpm, SIGTAG_MD5);
+
+		if(*sigtag_md5) {
+			if(digest(&d, "md5")) {
+				if(log)	log->logln("MD5Init failed.");
+				return -1;
+			}
+			while(1) {
+				n = read(fd, buf, sizeof(buf));
+				if(n < 1) break;
+				d.update(&d, buf, n);
+			}
+			d.final(&d);
+			if(strcmp(sigtag_md5, d.hexstr)) {
+				if(log) log->logln("MD5sum verification failed: %s %s", sigtag_md5, d.hexstr);
+				return -1;
+			} else {
+				if(log && log->level > 1)
+					if(log) log->logln("MD5sum verification succeeded.");
+			}
 		}
-		
 	}
 	
 	/* rewind to start of header */
