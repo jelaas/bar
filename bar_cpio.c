@@ -40,6 +40,9 @@ ssize_t cpio_write(const struct logcb *log, struct zstream *z, const struct cpio
 	
 	strncpy(header.c_magic, CPIOMAGIC, 6);
 
+	sprintf(buf, "%08llX", (long long unsigned int) statb.st_ino);
+	memcpy(header.c_ino, buf, 8);
+
 	sprintf(buf, "%08X", (unsigned int) statb.st_nlink);
 	memcpy(header.c_nlink, buf, 8);
 
