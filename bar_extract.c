@@ -1018,9 +1018,10 @@ int bar_extract(const struct logcb *log, const char *archive, struct jlhead *fil
 						printf("%s\t%llu\t%s\t%s\n",
 						       cpio.mode, (long long unsigned int) cpio.c_filesize, filemd5?filemd5:"-", cpio.name);
 					else
-						printf("%-8o %4d %6s %6s %9llu %9s %s %s\n",
-						       cpio.c_mode, cpio.c_nlink, fileuser, filegroup,
-						       (long long unsigned int) cpio.c_filesize, buf, cpio.name, fileflags?fileflags:"");
+						printf("%-8o %9llu %4d %6s %6s %9llu %9s %s %s\n",
+						       cpio.c_mode, (long long unsigned int) cpio.c_ino, cpio.c_nlink, fileuser,
+						       filegroup, (long long unsigned int) cpio.c_filesize, buf, cpio.name,
+						       fileflags?fileflags:"");
 				} else
 					printf("%s\n", cpio.name);
 			}
