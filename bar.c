@@ -61,6 +61,7 @@ struct {
 	int skip;
 	struct jlhead *requires;
 	char *compressor;
+	char *digestalgo;
 } conf;
 
 struct filespec {
@@ -980,6 +981,17 @@ static int bar_create(const char *archive, struct jlhead *files, int *err)
 		jl_append(rpm->tags, tag);
 	}
 
+	/* RPMTAG_FILEDIGESTALGO 5011 */
+	if(conf.digestalgo) {
+		tag = tag_new(RPMTAG_FILEDIGESTALGO);
+		tag->type = HDRTYPE_INT32;
+		tag->count = 1;
+		tag->value = "1"; /* MD5 */
+		if(!strcmp(conf.digestalgo, "sha256"))
+			tag->value = "8"; /* SHA256 */
+		jl_append(rpm->tags, tag);
+	}
+
 	fd = open(archive, O_RDWR|O_CREAT|O_TRUNC, 0666);
 	if(fd == -1) return -1;
 
@@ -1153,8 +1165,8 @@ static int file_new(struct jlhead *files, const char *fn, int create, struct fil
 			return -1;
 		}
 		
-		if(digest(&d, "md5")) {
-			fprintf(stderr, "bar: MD5Init failed.\n");
+		if(digest(&d, conf.digestalgo?conf.digestalgo:"md5")) {
+			fprintf(stderr, "bar: %s init failed.\n", conf.digestalgo);
 			close(fd);
 			return -1;
 		}
@@ -1400,6 +1412,7 @@ int main(int argc, char **argv)
 		       " --nosync               do not sync to disk while writing\n"
 		       " --quotechar <char>     [%%] used for inserting special chars\n"
 		       " --printtag <tag number>\n"
+		       " --sha256               use SHA256 for file digests\n"
 		       "\n"
 		       " Package handler information:\n"
 		       " --pkginfo\n"
@@ -1464,6 +1477,7 @@ int main(int argc, char **argv)
 	while(jelopt_int(argv, 0, "printtag", &conf.opt.printtag, &err));
 	while(jelopt_int(argv, 0, "skip", &conf.skip, &err));
 	while(jelopt(argv, 0, "nosum", NULL, &err)) conf.opt.ignore_chksum=1;
+	while(jelopt(argv, 0, "sha256", NULL, &err)) conf.digestalgo="sha256";
 	while(jelopt(argv, 0, "nosync", NULL, &err)) conf.opt.sync=0;
 	while(jelopt(argv, 0, "prefix", &conf.opt.prefix, &err)) {
 		int len = strlen(conf.opt.prefix);
