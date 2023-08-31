@@ -177,6 +177,9 @@ int cpio_read(const struct logcb *log, struct zstream *z, struct cpio_host *cpio
 		return -1;
 	}
 	strncpy(cpio->c_magic, header.c_magic, 6);
+
+	strncpy(buf, header.c_ino, 8); buf[8] = 0;
+	cpio->c_ino = strtoull(buf, (void*)0, 16);
 	
 	strncpy(buf, header.c_mode, 8); buf[8] = 0;
 	cpio->c_mode = strtoul(buf, (void*)0, 16);
