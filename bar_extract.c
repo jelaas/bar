@@ -1187,7 +1187,7 @@ int bar_extract(const struct logcb *log, const char *archive, struct jlhead *fil
 				if(!conf->ignore_chksum) {
 					if(log && log->level > 2)
 						log->logln("md5sum calculated to %s", d.hexstr);
-					if(filemd5) {
+					if(filemd5 && !((cpio.c_nlink > 1) && (cpio.c_filesize == 0))) {
 						if(!strcmp(cpio.mode,"f") && strcmp(d.hexstr, filemd5)) {
 							if(log) log->logln("md5sum mismatch of file %s", cpio.name);
 							return -1;
