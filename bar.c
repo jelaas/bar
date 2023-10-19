@@ -796,6 +796,23 @@ static int bar_create(const char *archive, struct jlhead *files, int *err)
 	tag = tag_new(RPMTAG_SOURCERPM);
 	tag->value = "None";
         jl_append(rpm->tags, tag);
+
+	/* RPMTAG_FILEVERIFYFLAGS 1045 */
+	tag = tag_new(RPMTAG_FILEVERIFYFLAGS);
+	tag->type = HDRTYPE_INT32;
+	tag->count = files->len;
+	tag->value = malloc(files->len * 4);
+	if(!tag->value) {
+		fprintf(stderr, "bar: Failed to allocate buffer for tag value\n");
+		return -1;
+	}
+	p = tag->value;
+	jl_foreach(files, f) {
+		sprintf(p, "%d\n", S_ISREG(f->stat.st_mode)?-1:0);
+		p += strlen(p);
+	}
+	jl_append(rpm->tags, tag);
+
 	
 	if(conf.requires) {
 		int i;
