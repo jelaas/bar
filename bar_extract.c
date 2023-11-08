@@ -341,6 +341,13 @@ static const char *tagstr(int t)
 	case RPMTAG_PAYLOADDIGESTALT:
 		return "RPMTAG_PAYLOADDIGESTALT";
 	case RPMTAG_HEADERIMMUTABLE:
+		/* example value: 0000003e00000007ffffff8000000010
+		   4 32bit numbers
+		   1: RPMTAG_HEADERIMMUTABLE|SIGTAG_HEADERSIGNATURES
+		   2: HDRTYPE_BIN
+		   3: -(Number of headers including this header and reservedspace)*16
+		   4: 16
+		*/
 		return "RPMTAG_HEADERIMMUTABLE";
 	}
 	return "";
@@ -557,8 +564,8 @@ static int rpm_header_read(const struct logcb *log, int fd, struct rpm *rpm, int
         }
 	d.update(&d, &rpm->header, sizeof(struct header));
 	
-	if(log && log->level > 1) log->logln("Reading index sized %d",
-					     sizeof(struct indexentry)*ntohl(rpm->header.entries));
+	if(log && log->level > 1) log->logln("Reading index sized %d, [%d entries]",
+					     sizeof(struct indexentry)*ntohl(rpm->header.entries), ntohl(rpm->header.entries));
 	for(i=0;i<ntohl(rpm->header.entries);i++) {
 		entry = malloc(sizeof(struct indexentry));
 		if(!entry) {

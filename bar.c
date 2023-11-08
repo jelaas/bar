@@ -526,6 +526,17 @@ static int bar_create(const char *archive, struct jlhead *files, int *err)
 	tag->track = 1;
 	jl_append(rpm->sigtags, tag);
 	
+	tag = tag_new(RPMTAG_HEADERIMMUTABLE);
+	tag->value = malloc(64);
+	if(!tag->value) {
+		fprintf(stderr, "bar: Failed to allocate buffer for tag value\n");
+		return -1;
+	}
+	/* ATTN: 30 below is the total number of headers and need to be changed if we add or remove headers */
+	sprintf(tag->value, "%08x%08x%08x%08x", RPMTAG_HEADERIMMUTABLE, HDRTYPE_BIN, -(30*16), 16);
+	tag->type = HDRTYPE_BIN;
+	jl_append(rpm->tags, tag);
+
 	tag = tag_new(RPMTAG_NAME);
 	tag->value = conf.tag.name;
 	jl_append(rpm->tags, tag);
@@ -1007,6 +1018,11 @@ static int bar_create(const char *archive, struct jlhead *files, int *err)
 		if(!strcmp(conf.digestalgo, "sha256"))
 			tag->value = "8"; /* SHA256 */
 		jl_append(rpm->tags, tag);
+	}
+
+	if(jl_len(rpm->tags) != 30) {
+		fprintf(stderr, "bar: You forgot to change the total number of headers in two places in bar.c. At RPMTAG_HEADERIMMUTABLE and where this error message is printed\n");
+		return -1;
 	}
 
 	fd = open(archive, O_RDWR|O_CREAT|O_TRUNC, 0666);
