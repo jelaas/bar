@@ -526,6 +526,10 @@ static int bar_create(const char *archive, struct jlhead *files, int *err)
 	tag->track = 1;
 	jl_append(rpm->sigtags, tag);
 	
+#if 0
+	/* This header is needed to make rpm not warn of old version.
+	   Unfortunately there is close to zero documentation available.
+	*/
 	tag = tag_new(RPMTAG_HEADERIMMUTABLE);
 	tag->value = malloc(64);
 	if(!tag->value) {
@@ -536,6 +540,7 @@ static int bar_create(const char *archive, struct jlhead *files, int *err)
 	sprintf(tag->value, "%08x%08x%08x%08x", RPMTAG_HEADERIMMUTABLE, HDRTYPE_BIN, -(30*16), 16);
 	tag->type = HDRTYPE_BIN;
 	jl_append(rpm->tags, tag);
+#endif
 
 	tag = tag_new(RPMTAG_NAME);
 	tag->value = conf.tag.name;
@@ -1018,11 +1023,6 @@ static int bar_create(const char *archive, struct jlhead *files, int *err)
 		if(!strcmp(conf.digestalgo, "sha256"))
 			tag->value = "8"; /* SHA256 */
 		jl_append(rpm->tags, tag);
-	}
-
-	if(jl_len(rpm->tags) != 30) {
-		fprintf(stderr, "bar: You forgot to change the total number of headers in two places in bar.c. At RPMTAG_HEADERIMMUTABLE and where this error message is printed\n");
-		return -1;
 	}
 
 	fd = open(archive, O_RDWR|O_CREAT|O_TRUNC, 0666);
